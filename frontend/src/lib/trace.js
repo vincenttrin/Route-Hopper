@@ -66,12 +66,11 @@ export function summarize(hops, networks) {
   const located = hops.filter((h) => h.located);
   let km = 0;
   for (let i = 1; i < located.length; i++) km += distanceKm(located[i - 1], located[i]);
-  const last = [...hops].reverse().find((h) => h.rtt != null);
   return {
     hops: hops.length,
     networks: networks.filter((n) => n.name !== LOCAL).length,
     km: Math.round(km),
-    rtt: last ? last.rtt : null,
+    rtt: hops.length ? hops[hops.length - 1].rtt : null,
   };
 }
 

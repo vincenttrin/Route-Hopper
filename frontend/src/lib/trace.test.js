@@ -38,6 +38,17 @@ describe('summarize', () => {
     expect(s.km).toBeLessThan(8500);
   });
 
+  it('reports no destination latency when the last hop has no rtt', () => {
+    const raw = {
+      hops: [
+        { hopNumber: 1, ip: '8.8.8.8', hostname: 'a.example.com', lat: 1, lng: 1, rtt: 5 },
+        { hopNumber: 2, ip: '*' },
+      ],
+    };
+    const { hops, networks } = normalizeTrace(raw);
+    expect(summarize(hops, networks).rtt).toBeNull();
+  });
+
   it('measures a known distance', () => {
     const d = distanceKm({ lat: 51.51, lng: -0.13 }, { lat: 48.86, lng: 2.35 });
     expect(Math.round(d)).toBeGreaterThan(330);

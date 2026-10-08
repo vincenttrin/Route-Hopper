@@ -5,6 +5,14 @@ const INK = '#15181a';
 const PAPER = '#f3f4f2';
 const DEST = '#f4b400';
 
+function tooltipFor(h) {
+  const root = document.createElement('div');
+  const num = document.createElement('b');
+  num.textContent = String(h.n).padStart(2, '0');
+  root.append(num, ` ${h.city || h.hostname || h.ip}`, document.createElement('br'), `${h.ip} - ${h.rtt != null ? h.rtt.toFixed(1) + ' ms' : 'no rtt'}`);
+  return root;
+}
+
 export default function HopMap({ hops, selected, onSelect }) {
   const el = useRef(null);
   const map = useRef(null);
@@ -45,10 +53,7 @@ export default function HopMap({ hops, selected, onSelect }) {
         ? { radius: 8, color: INK, weight: 3, fillColor: DEST, fillOpacity: 1 }
         : { radius: 6, color: INK, weight: 3, fillColor: PAPER, fillOpacity: 1 };
       const m = L.circleMarker([h.lat, h.lng], style).addTo(group);
-      m.bindTooltip(
-        `<b>${String(h.n).padStart(2, '0')}</b> ${h.city || h.hostname || h.ip}<br>${h.ip} - ${h.rtt != null ? h.rtt.toFixed(1) + ' ms' : 'no rtt'}`,
-        { direction: 'top', offset: [0, -6] },
-      );
+      m.bindTooltip(tooltipFor(h), { direction: 'top', offset: [0, -6] });
       m.on('click', () => onSelectRef.current(h.n));
       markers.current.set(h.n, m);
     });
