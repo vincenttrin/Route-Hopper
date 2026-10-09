@@ -2,9 +2,10 @@
 
 Enter a host name, IP, or URL and a bunny follows the route a packet takes to it. The
 app runs a traceroute, looks up each hop's location and network, and draws the route as
-a line diagram next to a map, with the bunny hopping from hop to hop on both. The first
-load shows an example trace (Omaha to Amsterdam) so you can see the layout before
-tracing anything.
+a line diagram next to a map, with the bunny hopping from hop to hop on both. On the map
+the route is drawn as arcs and the bunny bounces along them (the arcs are only for show;
+distances are measured along straight great-circle legs). The first load shows an example
+trace (Omaha to Amsterdam) so you can see the layout before tracing anything.
 
 Hops are discovered one at a time and shown at a steady pace: at least 1.2 seconds
 apart, however fast the backend finds them, so the hopping is easy to watch. The pace is
@@ -15,16 +16,16 @@ and rows appear without sliding in; the pace stays the same.
 
 ## The game
 
-Guess how far the packet travels before the bunny gets there.
+Watch the bunny follow the route first, then guess how far the packet travelled.
 
-1. Type a guess in the box next to the endpoint, in km or miles (the toggle beside it),
-   and press **Hop!**. A guess is required: empty, non-numeric, zero, or absurdly large
-   (over 500,000 km) guesses are rejected with a message.
-2. The guess is locked while the bunny hops, and the real distance stays hidden (the
-   distance stat shows `?`).
-3. When the trace finishes, the result panel shows your guess, the actual distance, and a
-   score from 0 to 100, with a message from the bunny. **Play again** clears the round.
-   The best score of the session is kept in the page (nothing is stored on the server).
+1. Enter an endpoint and press **Hop!**. The bunny hops along the route; the real distance
+   stays hidden (the distance stat shows `?`).
+2. When the bunny gets home, the game panel asks for a guess in km or miles (toggle beside
+   the box). Empty, non-numeric, zero, or absurdly large (over 500,000 km) guesses are
+   rejected with a message and can be corrected.
+3. Press **Guess**. The panel shows your guess, the actual distance, and a score from 0 to
+   100, with a message from the bunny. **Play again** clears the round. The best score of
+   the session is kept in the page (nothing is stored on the server).
 
 The **actual distance** is the sum of the great-circle distances between consecutive hops
 that have a location, in order. Hops without a location (private addresses, no reply, no
@@ -45,7 +46,8 @@ Over- and undershooting by the same distance score the same. The functions are i
 A round is not scored, and says why, when:
 
 - fewer than two hops have a location, or the located hops are all in the same spot
-  (under 1 km of route), since there is no distance to compare with;
+  (under 1 km of route): there is no distance to guess, so the panel says so instead of
+  asking;
 - the trace is cancelled, or the connection to the backend is lost before it finishes.
 
 - **Frontend:** React, Leaflet (OpenStreetMap tiles), Vite

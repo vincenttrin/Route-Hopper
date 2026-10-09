@@ -9,6 +9,7 @@ import {
   parseGuess,
   scoreGuess,
   scoreMessage,
+  unscoreableReason,
 } from './game.js';
 
 describe('scoreGuess', () => {
@@ -111,6 +112,24 @@ describe('judgeRound', () => {
 
   it('does not score a route that stayed in one place', () => {
     expect(judgeRound(900, 0, 3)).toEqual({ status: 'unscoreable', reason: 'no-distance' });
+  });
+});
+
+describe('unscoreableReason', () => {
+  it('lets a route with a distance be played', () => {
+    expect(unscoreableReason(1000, 5)).toBeNull();
+    expect(unscoreableReason(MIN_SCOREABLE_KM, 2)).toBeNull();
+  });
+
+  it('needs at least two located hops', () => {
+    expect(unscoreableReason(0, 0)).toBe('few-hops');
+    expect(unscoreableReason(0, 1)).toBe('few-hops');
+  });
+
+  it('needs the route to have gone somewhere', () => {
+    expect(unscoreableReason(0, 3)).toBe('no-distance');
+    expect(unscoreableReason(MIN_SCOREABLE_KM / 2, 3)).toBe('no-distance');
+    expect(unscoreableReason(NaN, 3)).toBe('no-distance');
   });
 });
 
