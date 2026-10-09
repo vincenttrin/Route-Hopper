@@ -42,6 +42,7 @@ func NewTracer() *Tracer {
 		Run:          execRun,
 		LookupAddr:   net.DefaultResolver.LookupAddr,
 		Timeout:      60 * time.Second,
+		ICMPTimeout:  15 * time.Second,
 		DNSTimeout:   2 * time.Second,
 		ProbesPerHop: 2,
 		WaitSeconds:  1,

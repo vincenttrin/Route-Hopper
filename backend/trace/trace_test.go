@@ -263,3 +263,31 @@ func TestNoRepliesBeyondFirstHop(t *testing.T) {
 		})
 	}
 }
+
+func TestNewTracerGivesICMPPassABudget(t *testing.T) {
+	tr := NewTracer()
+	if tr.Timeout <= 0 || tr.ICMPTimeout <= 0 {
+		t.Errorf("Timeout = %v, ICMPTimeout = %v", tr.Timeout, tr.ICMPTimeout)
+	}
+	var icmpDeadline time.Duration
+	tr.LookupAddr = func(context.Context, string) ([]string, error) { return nil, errors.New("nxdomain") }
+	tr.Run = func(ctx context.Context, _ string, args ...string) ([]byte, error) {
+		if args[0] == "-I" {
+			dl, ok := ctx.Deadline()
+			if !ok {
+				t.Error("ICMP pass has no deadline")
+			}
+			icmpDeadline = time.Until(dl)
+			return []byte(facebookICMP), nil
+		}
+		return []byte(facebookUDP), nil
+	}
+	dest := netip.MustParseAddr("57.144.20.1")
+	hops, err := tr.Trace(context.Background(), dest, 30)
+	if err != nil || !Reached(hops, dest) {
+		t.Fatalf("hops = %+v, err = %v", hops, err)
+	}
+	if icmpDeadline <= 0 {
+		t.Errorf("ICMP pass deadline already expired: %v", icmpDeadline)
+	}
+}
