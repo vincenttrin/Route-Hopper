@@ -1,0 +1,23 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      ALLOW_PRIVATE_TARGETS: ${ALLOW_PRIVATE_TARGETS:-false}
+    volumes:
+      # Put GeoLite2-City.mmdb (and optionally GeoLite2-ASN.mmdb) here. See backend/README.md.
+      - ${GEOIP_DIR:-./geoip}:/data:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${PORT:-3000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

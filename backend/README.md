@@ -67,6 +67,17 @@ forwarded-header handling before exposing this directly.
 
 ## Docker
 
+From the repo root, `docker compose up --build` serves the frontend on
+http://localhost:3000 (`PORT` to change it) and proxies `/api` to the backend, which is
+not published on the host. Put the GeoLite2 files in `./geoip` (or set `GEOIP_DIR`).
+
+Docker Desktop on macOS and Windows runs containers behind a NAT that drops the
+"TTL exceeded" replies traceroute depends on, so traces from there show only the first
+hop and then no replies. Use a Linux host for real traces, or run the backend natively
+(`go run .`) with the frontend dev server.
+
+Backend image on its own:
+
 ```bash
 docker build -t traffic-visualizer-backend .
 docker run --rm -p 8080:8080 -v /path/to/dbs:/data traffic-visualizer-backend
