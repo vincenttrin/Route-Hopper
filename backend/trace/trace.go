@@ -113,3 +113,24 @@ func (t *Tracer) resolveNames(ctx context.Context, hops []Hop) {
 	}
 	wg.Wait()
 }
+
+// minHopsForNoReplyCheck is how many hops a trace needs before silence past
+// the first one is treated as a sign of a broken network path rather than a
+// short route to a host that does not answer.
+const minHopsForNoReplyCheck = 3
+
+// NoRepliesBeyondFirstHop reports whether the trace got no reply from any hop
+// past the first. This is what traceroute looks like from Docker Desktop on
+// macOS and Windows, whose VM network drops the TTL-exceeded replies: the
+// container's gateway answers and everything after it is silent.
+func NoRepliesBeyondFirstHop(hops []Hop) bool {
+	if len(hops) < minHopsForNoReplyCheck {
+		return false
+	}
+	for _, h := range hops[1:] {
+		if h.IP.IsValid() {
+			return false
+		}
+	}
+	return true
+}

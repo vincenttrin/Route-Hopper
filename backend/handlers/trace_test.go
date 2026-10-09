@@ -93,6 +93,42 @@ func TestTraceResponseShape(t *testing.T) {
 	}
 }
 
+func TestTraceWarnsWhenNoRepliesBeyondFirstHop(t *testing.T) {
+	dockerLike := []trace.Hop{{Number: 1, IP: addr("172.21.0.1"), RTT: 0.1}, {Number: 2}, {Number: 3}, {Number: 4}}
+	healthy := []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("93.184.216.34")}, {Number: 3, IP: addr("93.184.216.35")}}
+	tests := []struct {
+		name     string
+		hops     []trace.Hop
+		wantWarn bool
+	}{
+		{"docker desktop style", dockerLike, true},
+		{"healthy trace", healthy, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			api := NewAPI(&fakeTracer{hops: tt.hops}, fakeResolver{}, geo.Nop{}, 1)
+			rec := post(api, `{"endpoint":"8.8.8.8"}`)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status %d: %s", rec.Code, rec.Body)
+			}
+			var got traceResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if tt.wantWarn {
+				if !strings.Contains(got.Warning, "Docker Desktop") || !strings.Contains(got.Warning, "natively") {
+					t.Errorf("warning = %q", got.Warning)
+				}
+				if len(got.Hops) != len(tt.hops) {
+					t.Errorf("hops still returned: %d", len(got.Hops))
+				}
+			} else if got.Warning != "" || strings.Contains(rec.Body.String(), "warning") {
+				t.Errorf("unexpected warning in %s", rec.Body)
+			}
+		})
+	}
+}
+
 func TestTraceEmptyHopsEncodesAsArray(t *testing.T) {
 	api := NewAPI(&fakeTracer{}, fakeResolver{}, geo.Nop{}, 1)
 	rec := post(api, `{"endpoint":"8.8.8.8"}`)

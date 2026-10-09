@@ -57,6 +57,11 @@ export default function App() {
           {error}
         </div>
       )}
+      {!isExample && !error && raw.warning && (
+        <div className="notice notice-warn" role="status">
+          {raw.warning}
+        </div>
+      )}
       {isExample && !error && (
         <div className="notice notice-info">Example trace. Enter an endpoint above to trace your own route.</div>
       )}
