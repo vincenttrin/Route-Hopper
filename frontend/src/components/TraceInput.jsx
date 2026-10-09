@@ -1,11 +1,11 @@
 import { useState } from 'react';
 
-export default function TraceInput({ initial, busy, onSubmit }) {
+export default function TraceInput({ initial, busy, onSubmit, onCancel }) {
   const [value, setValue] = useState(initial);
   const submit = (e) => {
     e.preventDefault();
     const v = value.trim();
-    if (v) onSubmit(v);
+    if (v && !busy) onSubmit(v);
   };
   return (
     <form className="trace-form" onSubmit={submit}>
@@ -20,9 +20,13 @@ export default function TraceInput({ initial, busy, onSubmit }) {
         autoComplete="off"
         spellCheck="false"
       />
-      <button type="submit" disabled={busy}>
-        {busy ? 'Tracing' : 'Trace'}
-      </button>
+      {busy ? (
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      ) : (
+        <button type="submit">Trace</button>
+      )}
     </form>
   );
 }

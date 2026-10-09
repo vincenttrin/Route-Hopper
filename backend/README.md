@@ -65,6 +65,31 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
 - Errors are plain text: 400 invalid input, 403 non-public target, 422 unresolvable
   host, 429 rate limited, 503 too many concurrent traces, 504 nothing traced in time.
 
+### Streaming: `POST /api/trace/stream`
+
+Same request, but the response is [NDJSON](https://github.com/ndjson/ndjson-spec)
+(`application/x-ndjson`): one JSON object per line, written and flushed as the trace
+progresses, so a client can draw each hop the moment traceroute prints it. It is NDJSON
+rather than server-sent events because the request needs a POST body, which `EventSource`
+cannot send; `fetch` reads the stream directly. Every line has a `type`:
+
+| `type` | Fields | When |
+| --- | --- | --- |
+| `start` | `destination` | First line, once the target is resolved and a trace slot is taken |
+| `hop` | `hop` (same shape as in `hops` above, already named and located) | Each hop, in order, as it is parsed |
+| `phase` | `phase: "icmp"` | The destination did not answer UDP probes and the ICMP retry begins |
+| `reset` | | The ICMP retry reached the destination: discard the hops so far; its hops follow |
+| `done` | `destination`, `reached`, `warning` (optional) | Last line of a finished trace |
+| `error` | `error`, `status` | The trace failed after streaming began; `status` is the HTTP status the plain endpoint would have used |
+
+Requests that are rejected before streaming begins (400, 403, 422, 429, 503) are
+ordinary plain-text HTTP errors, exactly as for `POST /api/trace`. Both endpoints share
+the rate limit and the concurrent trace cap, and keep the same time limits. During the
+ICMP retry the ICMP hops are held back and sent after `reset` only if they got further
+than the UDP hops. Closing the connection stops the traceroute process. Behind a proxy,
+disable response buffering for this path (the response sets `X-Accel-Buffering: no`; the
+bundled `frontend/nginx.conf` also turns `proxy_buffering` off).
+
 `GET /healthz` returns `{"status":"ok"}`.
 
 ## Geolocation database

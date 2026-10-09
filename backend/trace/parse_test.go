@@ -55,3 +55,23 @@ func TestParse(t *testing.T) {
 		})
 	}
 }
+
+func TestParseLine(t *testing.T) {
+	tests := []struct {
+		line   string
+		wantOK bool
+		n      int
+	}{
+		{"traceroute to 1.1.1.1 (1.1.1.1), 30 hops max", false, 0},
+		{"", false, 0},
+		{"    96.34.1.188  19.369 ms", false, 0}, // ECMP continuation line
+		{" 4  159.111.150.124  20.603 ms  31.038 ms", true, 4},
+		{" 5  * *", true, 5},
+	}
+	for _, tt := range tests {
+		h, ok := ParseLine(tt.line)
+		if ok != tt.wantOK || h.Number != tt.n {
+			t.Errorf("ParseLine(%q) = %+v, %v", tt.line, h, ok)
+		}
+	}
+}

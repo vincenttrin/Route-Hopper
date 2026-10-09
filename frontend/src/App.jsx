@@ -2,8 +2,10 @@ import { useMemo, useRef, useState } from 'react';
 import TraceInput from './components/TraceInput.jsx';
 import LineDiagram from './components/LineDiagram.jsx';
 import HopMap from './components/HopMap.jsx';
+import LiveStatus from './components/LiveStatus.jsx';
 import { normalizeTrace, summarize, LOCAL_COLOR } from './lib/trace.js';
-import { runTrace } from './services/api.js';
+import { toRaw } from './lib/stream.js';
+import { runTrace, streamTrace, StreamUnavailableError, StreamInterruptedError } from './services/api.js';
 import { SAMPLE_TRACE, SAMPLE_ENDPOINT } from './services/sample.js';
 
 function routeTitle(hops, endpoint) {
@@ -28,31 +30,81 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
+  // Set while hops are arriving: when the trace started and what it is doing besides probing.
+  const [live, setLive] = useState(null);
+  const [cancelled, setCancelled] = useState(false);
   const abort = useRef(null);
 
-  const trace = useMemo(() => normalizeTrace(raw), [raw]);
+  const trace = useMemo(() => normalizeTrace(raw, { live: Boolean(live) }), [raw, live]);
   const stats = useMemo(() => summarize(trace.hops, trace.networks), [trace]);
   // Where the route was heading, when the destination never answered and has a known location.
-  const unreached = !trace.reached && trace.destination?.located ? trace.destination : null;
+  const unreached = !live && !trace.reached && trace.destination?.located ? trace.destination : null;
 
   const submit = async (value) => {
     abort.current?.abort();
-    abort.current = new AbortController();
+    const ctl = new AbortController();
+    abort.current = ctl;
+    const current = () => abort.current === ctl;
+    const previous = { raw, endpoint, isExample };
+    let streamed = null;
     setBusy(true);
     setError(null);
+    setCancelled(false);
     try {
-      const data = await runTrace(value, 30, abort.current.signal);
-      if (!data.hops?.length) throw new Error('The trace returned no hops.');
-      setRaw(data);
-      setEndpoint(value);
-      setExample(false);
-      setSelected(null);
+      try {
+        await streamTrace(value, 30, ctl.signal, (state) => {
+          if (!current()) return;
+          // The first event means the server took the request: leave the previous trace behind.
+          if (!streamed) {
+            setEndpoint(value);
+            setExample(false);
+            setSelected(null);
+            setLive({ startedAt: Date.now(), phase: null });
+          }
+          streamed = state;
+          setRaw(toRaw(state));
+          setLive((l) => (l && l.phase !== state.phase ? { ...l, phase: state.phase } : l));
+        });
+        if (!streamed.hops.length) throw new Error('The trace returned no hops.');
+      } catch (e) {
+        const lostBeforeAnyHop = e instanceof StreamInterruptedError && !streamed?.hops.length;
+        if (!(e instanceof StreamUnavailableError) && !lostBeforeAnyHop) throw e;
+        // Streaming does not work here (an old backend, a proxy in the way): trace in one piece instead.
+        streamed = null;
+        setLive(null);
+        const data = await runTrace(value, 30, ctl.signal);
+        if (!data.hops?.length) throw new Error('The trace returned no hops.');
+        if (!current()) return;
+        setRaw(data);
+        setEndpoint(value);
+        setExample(false);
+        setSelected(null);
+      }
     } catch (e) {
-      if (e.name !== 'AbortError') setError(e.message || 'Could not reach the trace service.');
+      if (!current()) return;
+      if (e.name === 'AbortError') {
+        setCancelled(Boolean(streamed?.hops.length));
+      } else if (e instanceof StreamInterruptedError) {
+        setError(`The connection to the trace service was lost after ${streamed.hops.length} hops. The route so far is shown.`);
+      } else {
+        setError(e.message || 'Could not reach the trace service.');
+      }
+      // A trace that never produced a hop leaves the previous one on screen.
+      if (!streamed?.hops.length) {
+        setRaw(previous.raw);
+        setEndpoint(previous.endpoint);
+        setExample(previous.isExample);
+        setSelected(null);
+      }
     } finally {
-      setBusy(false);
+      if (current()) {
+        setBusy(false);
+        setLive(null);
+      }
     }
   };
+
+  const cancel = () => abort.current?.abort();
 
   return (
     <div className="app">
@@ -61,11 +113,17 @@ export default function App() {
           <span>{routeTitle(trace.hops, endpoint)}</span>
           <b>{stats.hops} hops</b>
         </div>
-        <TraceInput initial={endpoint} busy={busy} onSubmit={submit} />
+        <TraceInput initial={endpoint} busy={busy} onSubmit={submit} onCancel={cancel} />
       </header>
       {error && (
         <div className="notice" role="alert">
           {error}
+        </div>
+      )}
+      {live && <LiveStatus startedAt={live.startedAt} hops={trace.hops} phase={live.phase} />}
+      {cancelled && !error && (
+        <div className="notice notice-info" role="status">
+          Trace cancelled after {stats.hops} hops. The route so far is shown.
         </div>
       )}
       {!isExample && !error && raw.warning && (
@@ -73,7 +131,7 @@ export default function App() {
           {raw.warning}
         </div>
       )}
-      {!isExample && !error && !trace.reached && (
+      {!isExample && !error && !live && !cancelled && !trace.reached && (
         <div className="notice notice-info" role="status">
           {unreachedMessage(endpoint, trace)}
         </div>
@@ -83,7 +141,7 @@ export default function App() {
       )}
       <main className={`main${busy ? ' is-busy' : ''}`}>
         <section className="list" aria-label="Hops">
-          <LineDiagram hops={trace.hops} selected={selected} onSelect={setSelected} />
+          <LineDiagram hops={trace.hops} live={Boolean(live)} selected={selected} onSelect={setSelected} />
         </section>
         <aside className="side">
           <div>

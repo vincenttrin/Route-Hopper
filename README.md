@@ -3,7 +3,8 @@
 Enter a host name, IP, or URL and the app runs a traceroute to it, looks up each hop's
 location and network, and draws the route as a line diagram next to a map. The first
 load shows an example trace (Omaha to Amsterdam) so you can see the layout before
-tracing anything.
+tracing anything. Hops appear on the diagram and map one at a time as they are
+discovered, and a trace in progress can be cancelled.
 
 - **Frontend:** React, Leaflet (OpenStreetMap tiles), Vite
 - **Backend:** Go REST API that shells out to the system `traceroute`

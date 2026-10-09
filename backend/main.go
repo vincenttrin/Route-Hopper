@@ -25,7 +25,13 @@ func main() {
 	api.AllowPrivate = os.Getenv("ALLOW_PRIVATE_TARGETS") == "true"
 
 	mux := http.NewServeMux()
-	mux.Handle("POST /api/trace", handlers.RateLimit(envInt("RATE_LIMIT_PER_MINUTE", 20), 5, http.HandlerFunc(api.Trace)))
+	// Both trace endpoints draw on one rate limit.
+	traces := http.NewServeMux()
+	traces.HandleFunc("POST /api/trace", api.Trace)
+	traces.HandleFunc("POST /api/trace/stream", api.TraceStream)
+	limited := handlers.RateLimit(envInt("RATE_LIMIT_PER_MINUTE", 20), 5, traces)
+	mux.Handle("/api/trace", limited)
+	mux.Handle("/api/trace/stream", limited)
 	mux.HandleFunc("GET /healthz", handlers.Health)
 
 	srv := &http.Server{

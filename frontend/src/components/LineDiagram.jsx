@@ -59,7 +59,7 @@ function Track({ hops }) {
   );
 }
 
-export default function LineDiagram({ hops, selected, onSelect }) {
+export default function LineDiagram({ hops, live = false, selected, onSelect }) {
   const maxRtt = Math.max(1, ...hops.map((h) => h.rtt || 0));
   return (
     <ol className="line-list" style={{ '--row': `${ROW}px` }}>
@@ -67,7 +67,7 @@ export default function LineDiagram({ hops, selected, onSelect }) {
       {hops.map((h) => {
         const pad = String(h.n).padStart(2, '0');
         const title = h.network ? h.city || h.hostname || h.ip : 'No reply';
-        const ends = h === hops[hops.length - 1];
+        const ends = !live && h === hops[hops.length - 1];
         const silentMeta =
           h.span > 1
             ? `HOPS ${pad}-${String(h.n + h.span - 1).padStart(2, '0')} - * * * - no reply, the trace ends here`
