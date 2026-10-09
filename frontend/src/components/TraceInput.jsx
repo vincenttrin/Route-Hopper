@@ -20,12 +20,13 @@ export default function TraceInput({ initial, busy, onSubmit, onCancel }) {
         autoComplete="off"
         spellCheck="false"
       />
+      {/* Distinct keys: React must remount rather than flip this one node from button to submit mid-click, or the click that cancels also submits the form. */}
       {busy ? (
-        <button type="button" onClick={onCancel}>
+        <button key="cancel" type="button" onClick={onCancel}>
           Cancel
         </button>
       ) : (
-        <button type="submit">Trace</button>
+        <button key="trace" type="submit">Trace</button>
       )}
     </form>
   );
