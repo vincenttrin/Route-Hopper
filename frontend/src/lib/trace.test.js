@@ -115,13 +115,13 @@ describe('normalizeTrace while the trace is running', () => {
 
   it('keeps trailing silent hops as separate rows, since more may follow', () => {
     const raw = { hops: [hop(1, '192.168.1.1'), hop(2, ''), hop(3, '')], destination };
-    expect(normalizeTrace(raw, { live: true }).hops.map((h) => h.span)).toEqual([1, 1, 1]);
+    expect(normalizeTrace(raw, { partial: true }).hops.map((h) => h.span)).toEqual([1, 1, 1]);
     expect(normalizeTrace({ ...raw, reached: false }).hops.map((h) => h.span)).toEqual([1, 2]);
   });
 
   it('does not call the latest hop the destination', () => {
     const raw = { hops: [hop(1, '192.168.1.1'), hop(2, '96.34.20.4')], destination };
-    const t = normalizeTrace(raw, { live: true });
+    const t = normalizeTrace(raw, { partial: true });
     expect(t.hops.some((h) => h.destination)).toBe(false);
     expect(t.reached).toBe(false);
     expect(summarize(t.hops, t.networks).rtt).toBeNull();
@@ -129,10 +129,18 @@ describe('normalizeTrace while the trace is running', () => {
 
   it('marks the hop that has the destination address as soon as it arrives', () => {
     const raw = { hops: [hop(1, '192.168.1.1'), hop(2, '93.184.216.34')], destination };
-    const t = normalizeTrace(raw, { live: true });
+    const t = normalizeTrace(raw, { partial: true });
     expect(t.hops[1].destination).toBe(true);
     expect(t.reached).toBe(true);
     expect(summarize(t.hops, t.networks).rtt).toBe(5);
+  });
+
+  it('treats a cancelled or interrupted trace as unfinished', () => {
+    const raw = { hops: [hop(1, '192.168.1.1'), hop(2, '96.34.20.4'), hop(3, ''), hop(4, '')], destination };
+    const t = normalizeTrace(raw, { partial: true });
+    expect(t.hops.map((h) => h.span)).toEqual([1, 1, 1, 1]);
+    expect(t.hops.some((h) => h.destination)).toBe(false);
+    expect(summarize(t.hops, t.networks).rtt).toBeNull();
   });
 
   it('gives the same result as the one-shot response once finished', () => {

@@ -32,13 +32,15 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   // Set while hops are arriving: when the trace started and what it is doing besides probing.
   const [live, setLive] = useState(null);
+  // True from the first streamed hop until the stream reports it finished.
+  const [partial, setPartial] = useState(false);
   const [cancelled, setCancelled] = useState(false);
   const abort = useRef(null);
 
-  const trace = useMemo(() => normalizeTrace(raw, { live: Boolean(live) }), [raw, live]);
+  const trace = useMemo(() => normalizeTrace(raw, { partial }), [raw, partial]);
   const stats = useMemo(() => summarize(trace.hops, trace.networks), [trace]);
   // Where the route was heading, when the destination never answered and has a known location.
-  const unreached = !live && !trace.reached && trace.destination?.located ? trace.destination : null;
+  const unreached = !partial && !trace.reached && trace.destination?.located ? trace.destination : null;
 
   const submit = async (value) => {
     abort.current?.abort();
@@ -60,18 +62,21 @@ export default function App() {
             setExample(false);
             setSelected(null);
             setLive({ startedAt: Date.now(), phase: null });
+            setPartial(true);
           }
           streamed = state;
           setRaw(toRaw(state));
           setLive((l) => (l && l.phase !== state.phase ? { ...l, phase: state.phase } : l));
         });
         if (!streamed.hops.length) throw new Error('The trace returned no hops.');
+        setPartial(false);
       } catch (e) {
         const lostBeforeAnyHop = e instanceof StreamInterruptedError && !streamed?.hops.length;
         if (!(e instanceof StreamUnavailableError) && !lostBeforeAnyHop) throw e;
         // Streaming does not work here (an old backend, a proxy in the way): trace in one piece instead.
         streamed = null;
         setLive(null);
+        setPartial(false);
         const data = await runTrace(value, 30, ctl.signal);
         if (!data.hops?.length) throw new Error('The trace returned no hops.');
         if (!current()) return;
@@ -91,6 +96,7 @@ export default function App() {
       }
       // A trace that never produced a hop leaves the previous one on screen.
       if (!streamed?.hops.length) {
+        setPartial(false);
         setRaw(previous.raw);
         setEndpoint(previous.endpoint);
         setExample(previous.isExample);
@@ -131,7 +137,7 @@ export default function App() {
           {raw.warning}
         </div>
       )}
-      {!isExample && !error && !live && !cancelled && !trace.reached && (
+      {!isExample && !error && !partial && !cancelled && !trace.reached && (
         <div className="notice notice-info" role="status">
           {unreachedMessage(endpoint, trace)}
         </div>

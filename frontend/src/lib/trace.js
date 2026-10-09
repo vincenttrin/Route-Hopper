@@ -20,10 +20,10 @@ const hasGeo = (h) => Number.isFinite(h.lat) && Number.isFinite(h.lng) && !(h.la
  * Turns the API response into display-ready hops with network, colour and lane.
  * `reached` is false when the destination never answered; the silent hops at the
  * end of such a trace are folded into one row (`span` counts the hops it covers).
- * With `live` the trace is still running: nothing is folded, since more hops may
+ * With `partial` the trace is unfinished (still running, cancelled or cut off): nothing is folded, since more hops may
  * follow, and a hop only counts as the destination if it has that address.
  */
-export function normalizeTrace(raw, { live = false } = {}) {
+export function normalizeTrace(raw, { partial = false } = {}) {
   const colors = new Map();
   let lane = 0;
   let prevNet = null;
@@ -60,7 +60,7 @@ export function normalizeTrace(raw, { live = false } = {}) {
   while (tail > 0 && !hops[tail - 1].ip) tail--;
   const lastReply = tail > 0 ? hops[tail - 1].n : null;
   let reached;
-  if (live) {
+  if (partial) {
     const dest = d?.ip && hops.find((h) => h.ip === d.ip);
     if (dest) dest.destination = true;
     reached = Boolean(dest);
