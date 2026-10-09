@@ -3,6 +3,7 @@ package geo
 import (
 	"fmt"
 	"net/netip"
+	"time"
 
 	"github.com/oschwald/geoip2-golang/v2"
 )
@@ -46,6 +47,16 @@ func (m *MaxMind) Lookup(ip netip.Addr) (Location, bool) {
 		}
 	}
 	return loc, found
+}
+
+// Info reports the City database's publisher and build date.
+func (m *MaxMind) Info() Info {
+	meta := m.city.Metadata()
+	return Info{
+		Available: true,
+		Provider:  provider(meta.DatabaseType),
+		Updated:   meta.BuildTime().UTC().Format(time.DateOnly),
+	}
 }
 
 func (m *MaxMind) Close() error {

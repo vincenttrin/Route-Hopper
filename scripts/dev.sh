@@ -3,9 +3,9 @@
 # TTL-exceeded replies (Docker Desktop on macOS and Windows drops them).
 # Usage: scripts/dev.sh            (backend :8080, frontend http://localhost:5173)
 #        BACKEND_PORT=8099 scripts/dev.sh
-# The GeoIP databases are read from $GEOIP_DIR (default ./geoip, where
-# scripts/fetch-geoip.sh puts them); GEOIP_CITY_DB, GEOIP_ASN_DB and the other
-# backend variables pass through.
+# The GeoIP databases are read from $GEOIP_DIR (default ./geoip). The backend downloads
+# them there on first start and refreshes them monthly, unless GEOIP_AUTO_UPDATE=false;
+# GEOIP_CITY_DB, GEOIP_ASN_DB and the other backend variables pass through.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 port="${BACKEND_PORT:-8080}"
@@ -23,7 +23,8 @@ fi
 geo_dir="${GEOIP_DIR:-$root/geoip}"
 export GEOIP_CITY_DB="${GEOIP_CITY_DB:-$geo_dir/GeoLite2-City.mmdb}"
 export GEOIP_ASN_DB="${GEOIP_ASN_DB:-$geo_dir/GeoLite2-ASN.mmdb}"
-[ -f "$GEOIP_CITY_DB" ] || echo "no GeoIP database at $GEOIP_CITY_DB: traces will show no map. Run scripts/fetch-geoip.sh, then restart." >&2
+export GEOIP_AUTO_UPDATE="${GEOIP_AUTO_UPDATE:-true}"
+[ -f "$GEOIP_CITY_DB" ] || echo "no GeoIP database at $GEOIP_CITY_DB yet: the backend is downloading it (the map fills in once it logs 'installed')." >&2
 
 [ -d "$root/frontend/node_modules" ] || (cd "$root/frontend" && npm install)
 

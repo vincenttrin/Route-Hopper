@@ -51,6 +51,9 @@ type hopJSON struct {
 	Lat       float64 `json:"lat"`
 	Lng       float64 `json:"lng"`
 	RTT       float64 `json:"rtt"`
+	// Hidden marks the one placeholder for the start of the route, which is
+	// withheld so the client cannot tell where the trace began (see redactor).
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 type destinationJSON struct {
@@ -81,7 +84,8 @@ const noRepliesWarning = "No hop past the first one replied, so this trace is in
 // could be placed on the map. The usual cause is a backend started without the
 // GeoIP databases (it logs "geolocation disabled" once at startup).
 const noLocationWarning = "None of the hops could be placed on the map. The backend has no GeoIP database loaded, " +
-	"or it has no entry for these addresses. Run scripts/fetch-geoip.sh, then restart the backend (see backend/README.md)."
+	"or it has no entry for these addresses. The backend downloads the database on start when GEOIP_AUTO_UPDATE is on; " +
+	"otherwise run scripts/fetch-geoip.sh and restart it (see backend/README.md)."
 
 // startTrace validates a trace request and claims a concurrency slot for it.
 // On failure it has already written the error response and ok is false.
@@ -133,9 +137,11 @@ func (a *API) Trace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := traceResponse{Hops: make([]hopJSON, 0, len(hops)), Reached: trace.Reached(hops, ip)}
+	red := a.redactor(ip)
 	for _, h := range hops {
-		resp.Hops = append(resp.Hops, a.enrich(h))
+		resp.Hops = append(resp.Hops, red.Add(h)...)
 	}
+	resp.Hops = append(resp.Hops, red.Flush()...)
 	resp.Warning = a.warning(ip, hops)
 	resp.Destination = a.destination(ip)
 	writeJSON(w, resp)
@@ -188,14 +194,20 @@ func (a *API) TraceStream(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Accel-Buffering", "no")
 	dest := a.destination(ip)
 	send(streamEvent{Type: "start", Destination: &dest})
+	red := a.redactor(ip)
+	sendHops := func(hops []hopJSON) {
+		for i := range hops {
+			send(streamEvent{Type: "hop", Hop: &hops[i]})
+		}
+	}
 
 	hops, err := a.Tracer.Stream(ctx, ip, maxHops, trace.Sink{
-		Hop: func(h trace.Hop) {
-			hj := a.enrich(h)
-			send(streamEvent{Type: "hop", Hop: &hj})
-		},
+		Hop:   func(h trace.Hop) { sendHops(red.Add(h)) },
 		Phase: func(p trace.Phase) { send(streamEvent{Type: "phase", Phase: string(p)}) },
-		Reset: func() { send(streamEvent{Type: "reset"}) },
+		Reset: func() {
+			red.reset()
+			send(streamEvent{Type: "reset"})
+		},
 	})
 	if err != nil {
 		if ctx.Err() == nil {
@@ -204,6 +216,7 @@ func (a *API) TraceStream(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	sendHops(red.Flush())
 	reached := trace.Reached(hops, ip)
 	send(streamEvent{Type: "done", Destination: &dest, Reached: &reached, Warning: a.warning(ip, hops)})
 }
@@ -219,6 +232,11 @@ func (a *API) enrich(h trace.Hop) hopJSON {
 		}
 	}
 	return hj
+}
+
+// redactor starts the source redaction for a trace to ip.
+func (a *API) redactor(ip netip.Addr) *redactor {
+	return newRedactor(ip, a.locate, a.enrich)
 }
 
 func (a *API) destination(ip netip.Addr) destinationJSON {
@@ -292,7 +310,26 @@ func writeJSON(w http.ResponseWriter, v any) {
 	}
 }
 
-// Health handles GET /healthz.
-func Health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, map[string]string{"status": "ok"})
+// geoInfo describes the location database in use.
+func (a *API) geoInfo() geo.Info {
+	if d, ok := a.Geo.(geo.Describer); ok {
+		return d.Info()
+	}
+	return geo.Info{}
+}
+
+// Health handles GET /healthz. The server is healthy without a location
+// database, which may still be downloading or unreachable: "geoip" says which.
+func (a *API) Health(w http.ResponseWriter, _ *http.Request) {
+	state := "missing"
+	if a.geoInfo().Available {
+		state = "ready"
+	}
+	writeJSON(w, map[string]string{"status": "ok", "geoip": state})
+}
+
+// GeoInfo handles GET /api/geoip: which location database is loaded and when it was built.
+func (a *API) GeoInfo(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Cache-Control", "no-cache")
+	writeJSON(w, a.geoInfo())
 }

@@ -10,7 +10,7 @@ describe('normalizeTrace', () => {
   });
 
   it('treats a hop with no ip as no reply', () => {
-    const miss = hops.find((h) => h.n === 7);
+    const miss = hops.find((h) => h.n === 6);
     expect(miss.network).toBeNull();
     expect(miss.located).toBe(false);
   });
@@ -19,7 +19,8 @@ describe('normalizeTrace', () => {
     expect(hops[0].lane).toBe(0);
     expect(hops[1].lane).toBe(1);
     expect(hops[1].change).toBe(true);
-    expect(hops[2].change).toBe(false);
+    expect(hops[2].change).toBe(true);
+    expect(hops[3].change).toBe(false);
   });
 
   it('gives every network a colour', () => {
@@ -71,8 +72,8 @@ describe('a destination that never replies', () => {
 
   it('leaves a single silent hop in the middle of a route alone', () => {
     const { hops } = normalizeTrace(SAMPLE_TRACE);
-    expect(hops.map((h) => h.n)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-    expect(hops.find((h) => h.n === 7).span).toBe(1);
+    expect(hops.map((h) => h.n)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(hops.find((h) => h.n === 6).span).toBe(1);
   });
 
   it('treats a trace as reached unless the API says otherwise', () => {
@@ -81,14 +82,55 @@ describe('a destination that never replies', () => {
   });
 });
 
+describe('the hidden start of a route', () => {
+  const raw = {
+    hops: [
+      { hopNumber: 1, hidden: true },
+      { hopNumber: 2, ip: '68.1.1.37', hostname: 'chgil-cr1.cox.net', city: 'Chicago', country: 'US', org: 'Cox', lat: 41.88, lng: -87.63, rtt: 19 },
+      { hopNumber: 3, ip: '93.184.216.34', hostname: 'example.com', city: 'Amsterdam', country: 'NL', lat: 52.37, lng: 4.9, rtt: 128 },
+    ],
+    destination: { ip: '93.184.216.34', lat: 52.37, lng: 4.9 },
+  };
+
+  it('is a local-network hop with no address, location or latency', () => {
+    const { hops, networks } = normalizeTrace(raw);
+    expect(hops[0]).toMatchObject({ n: 1, hidden: true, ip: null, hostname: null, city: null, located: false, rtt: null, network: 'Local network' });
+    expect(networks[0].name).toBe('Local network');
+  });
+
+  it('counts as a hop but not as a network, and adds nothing to the distance', () => {
+    const { hops, networks } = normalizeTrace(raw);
+    const s = summarize(hops, networks);
+    expect(s.hops).toBe(3);
+    expect(s.networks).toBe(2);
+    expect(s.located).toBe(2);
+    expect(s.exactKm).toBeCloseTo(distanceKm(raw.hops[1], raw.hops[2]), 6);
+  });
+
+  it('is not folded into a silent tail', () => {
+    const silent = { hopNumber: 2 };
+    const { hops, reached } = normalizeTrace({ hops: [{ hopNumber: 1, hidden: true }, silent, { ...silent, hopNumber: 3 }], destination: { ip: '1.1.1.1' }, reached: false });
+    expect(reached).toBe(false);
+    expect(hops.map((h) => [h.n, h.span])).toEqual([
+      [1, 1],
+      [2, 2],
+    ]);
+    expect(hops[0].hidden).toBe(true);
+  });
+
+  it('keeps each hop country for the share summary', () => {
+    expect(normalizeTrace(raw).hops.map((h) => h.country)).toEqual([null, 'US', 'NL']);
+  });
+});
+
 describe('summarize', () => {
   it('computes distance and destination latency', () => {
     const { hops, networks } = normalizeTrace(SAMPLE_TRACE);
     const s = summarize(hops, networks);
-    expect(s.hops).toBe(10);
+    expect(s.hops).toBe(9);
     expect(s.rtt).toBe(128);
     expect(s.km).toBeGreaterThan(7000);
-    expect(s.km).toBeLessThan(8500);
+    expect(s.km).toBeLessThan(7500);
   });
 
   it('reports no destination latency when the last hop has no rtt', () => {
