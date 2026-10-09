@@ -58,7 +58,7 @@ type redactor struct {
 	anchor    originHop   // the first public hop
 	sawPublic bool        // the first public hop has passed
 	done      bool        // the origin has ended: everything else is exposed
-	held      []trace.Hop // silent or private hops after the first public hop, not yet known to be in or out
+	held      []trace.Hop // silent or private hops after the first public hop, not yet known to be in or out; sent as silent
 }
 
 // originHop is what is known about the first public hop, to recognise the rest of its network.
@@ -129,12 +129,20 @@ func (r *redactor) hide() []hopJSON {
 // finish ends the origin and returns the hops held back, then h.
 func (r *redactor) finish(h trace.Hop) []hopJSON {
 	r.done = true
+	out := r.flushHeld()
+	return append(out, r.emit(h))
+}
+
+// flushHeld sends the held hops as silent ones: they sit inside the source's
+// network, so their address, name and latency stay behind, but they keep their
+// place in the numbering.
+func (r *redactor) flushHeld() []hopJSON {
 	var out []hopJSON
-	for _, p := range r.held {
-		out = append(out, r.emit(p))
+	for range r.held {
+		out = append(out, r.emit(trace.Hop{}))
 	}
 	r.held = nil
-	return append(out, r.emit(h))
+	return out
 }
 
 func (r *redactor) Add(h trace.Hop) []hopJSON {
@@ -167,10 +175,5 @@ func (r *redactor) Add(h trace.Hop) []hopJSON {
 
 // Flush returns what is still held once the trace has ended.
 func (r *redactor) Flush() []hopJSON {
-	var out []hopJSON
-	for _, p := range r.held {
-		out = append(out, r.emit(p))
-	}
-	r.held = nil
-	return out
+	return r.flushHeld()
 }

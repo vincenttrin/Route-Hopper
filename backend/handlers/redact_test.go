@@ -275,3 +275,28 @@ func TestLeavesNetwork(t *testing.T) {
 		}
 	}
 }
+
+func TestRedactNeverSendsPrivateHopsHeldAfterTheFirstPublicHop(t *testing.T) {
+	check := func(t *testing.T, got []hopJSON, want string) {
+		t.Helper()
+		if s := ips(got); s != want {
+			t.Errorf("hops = %v, want %v", s, want)
+		}
+		b, _ := json.Marshal(got)
+		for _, secret := range []string{"10.20.0.1", "10.20.0.2", "inner.cox.net"} {
+			if strings.Contains(string(b), secret) {
+				t.Errorf("%q reached the client: %s", secret, b)
+			}
+		}
+	}
+	t.Run("when the origin ends", func(t *testing.T) {
+		got := run(sourceGeo(), destIP,
+			hop(1, "192.168.1.1", "", 1), hop(2, "68.1.4.1", "", 8), hop(3, "10.20.0.1", "inner.cox.net", 9), hop(4, "", "", 0), hop(5, "4.69.201.6", "", 35), hop(6, destIP, "", 30))
+		check(t, got, "hidden,silent,silent,4.69.201.6,"+destIP)
+	})
+	t.Run("when the trace stops at flush", func(t *testing.T) {
+		got := run(sourceGeo(), destIP,
+			hop(1, "192.168.1.1", "", 1), hop(2, "68.1.4.1", "", 8), hop(3, "10.20.0.1", "inner.cox.net", 9), hop(4, "10.20.0.2", "", 10))
+		check(t, got, "hidden,silent,silent")
+	})
+}

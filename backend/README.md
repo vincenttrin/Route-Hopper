@@ -129,7 +129,9 @@ neither the details nor the number of hidden hops can be read from the response.
 3. each following hop that belongs to the same network as that first public hop, meaning the
    same owner in the ASN database or the same registered domain in its reverse DNS name
    (last two labels, `cox.net`), or that is located within 100 km of it (`NearSourceKm`).
-   Silent and private hops between such hops are part of the origin. This is the access
+   Silent and private hops between such hops are part of the origin; if the trace ends or
+   leaves the origin before another such hop, they are sent as silent hops with no address,
+   host name or latency. This is the access
    ISP's own backbone, up to where it hands the packet to another network.
 
 The origin ends at the first public hop that is none of these. Rules that keep the result usable:
