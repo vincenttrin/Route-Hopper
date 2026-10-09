@@ -1,11 +1,11 @@
 import { useState } from 'react';
 
-export default function TraceInput({ initial, busy, onSubmit }) {
+export default function TraceInput({ initial, busy, onSubmit, onCancel }) {
   const [value, setValue] = useState(initial);
   const submit = (e) => {
     e.preventDefault();
     const v = value.trim();
-    if (v) onSubmit(v);
+    if (v && !busy) onSubmit(v);
   };
   return (
     <form className="trace-form" onSubmit={submit}>
@@ -20,9 +20,14 @@ export default function TraceInput({ initial, busy, onSubmit }) {
         autoComplete="off"
         spellCheck="false"
       />
-      <button type="submit" disabled={busy}>
-        {busy ? 'Tracing' : 'Trace'}
-      </button>
+      {/* Distinct keys: React must remount rather than flip this one node from button to submit mid-click, or the click that cancels also submits the form. */}
+      {busy ? (
+        <button key="cancel" type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      ) : (
+        <button key="trace" type="submit">Trace</button>
+      )}
     </form>
   );
 }

@@ -24,14 +24,22 @@ var hopLine = regexp.MustCompile(`^\s*(\d+)\s+(.*)$`)
 func Parse(output string) []Hop {
 	var hops []Hop
 	for _, line := range strings.Split(output, "\n") {
-		m := hopLine.FindStringSubmatch(line)
-		if m == nil {
-			continue
+		if h, ok := ParseLine(line); ok {
+			hops = append(hops, h)
 		}
-		n, _ := strconv.Atoi(m[1])
-		hops = append(hops, parseProbes(n, m[2]))
 	}
 	return hops
+}
+
+// ParseLine parses one line of traceroute output. It returns false for lines
+// that do not start a hop, such as the header and ECMP continuation lines.
+func ParseLine(line string) (Hop, bool) {
+	m := hopLine.FindStringSubmatch(line)
+	if m == nil {
+		return Hop{}, false
+	}
+	n, _ := strconv.Atoi(m[1])
+	return parseProbes(n, m[2]), true
 }
 
 // parseProbes reads the probe results of one hop, e.g. "10.0.0.1  1.2 ms  1.4 ms".
