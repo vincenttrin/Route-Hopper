@@ -28,6 +28,7 @@ button, input { font: inherit; border-radius: 0; }
 .bar :focus-visible { outline-color: #fff; outline-offset: -3px; }
 
 .notice { padding: 10px 20px; background: #d83b2a; color: #fff; font-weight: 500; }
+.notice-warn { background: #f5e6b8; color: var(--ink); font-size: 13px; }
 .notice-info { background: #e4e8e6; color: var(--ink); font-size: 13px; }
 
 .main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 400px); transition: opacity .15s; }

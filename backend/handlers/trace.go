@@ -61,7 +61,16 @@ type destinationJSON struct {
 type traceResponse struct {
 	Hops        []hopJSON       `json:"hops"`
 	Destination destinationJSON `json:"destination"`
+	// Warning explains why the trace may be incomplete. Optional.
+	Warning string `json:"warning,omitempty"`
 }
+
+// noRepliesWarning is shown when only the first hop answered. It is the
+// signature of Docker Desktop on macOS and Windows, but a firewall that drops
+// all TTL-exceeded replies looks the same, so it says "may".
+const noRepliesWarning = "No hop past the first one replied, so this trace is incomplete. " +
+	"If the backend runs in Docker Desktop (macOS or Windows), its network drops the replies " +
+	"traceroute needs: run the backend natively (see backend/README.md) or on a Linux host."
 
 // Trace handles POST /api/trace.
 func (a *API) Trace(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +121,10 @@ func (a *API) Trace(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		resp.Hops = append(resp.Hops, hj)
+	}
+	if trace.NoRepliesBeyondFirstHop(hops) {
+		log.Printf("trace to %s: no replies beyond the first hop (Docker Desktop network, or a firewall dropping TTL-exceeded replies)", ip)
+		resp.Warning = noRepliesWarning
 	}
 	resp.Destination.IP = ip.String()
 	if loc, ok := a.locate(ip); ok {

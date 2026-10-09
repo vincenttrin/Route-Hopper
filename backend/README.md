@@ -5,6 +5,20 @@ geolocation, and returns JSON for the frontend map.
 
 ## Run
 
+On macOS (and anywhere real traces matter during development) run the backend and the
+Vite dev server natively. From the repo root:
+
+```bash
+scripts/dev.sh           # backend :8080, frontend http://localhost:5173
+BACKEND_PORT=8099 scripts/dev.sh   # if 8080 is taken
+```
+
+The script installs the frontend dependencies on first run and stops both processes
+on Ctrl-C. Backend variables such as `GEOIP_CITY_DB` pass through. The system
+`traceroute` that ships with macOS works unprivileged, so no sudo is needed.
+
+To run only the backend:
+
 ```bash
 go run .                 # http://localhost:8080
 go test -race ./...
@@ -28,6 +42,10 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
   "destination": { "ip": "1.0.0.1", "city": "Sydney", "lat": -33.86, "lng": 151.2 }
 }
 ```
+
+- `warning` (optional string) is present when the trace is probably incomplete: at
+  least three hops were traced and none past the first replied. The frontend shows it
+  above the results and the server logs it. See [Docker](#docker).
 
 - A hop that never answered has an empty `ip`; a hop without geolocation (private
   addresses, unknown ranges) has `lat` and `lng` of 0.
@@ -90,9 +108,12 @@ http://localhost:3000 (`PORT` to change it) and proxies `/api` to the backend, w
 not published on the host. Run `scripts/fetch-geoip.sh` first to populate `./geoip` (or set `GEOIP_DIR`).
 
 Docker Desktop on macOS and Windows runs containers behind a NAT that drops the
-"TTL exceeded" replies traceroute depends on, so traces from there show only the first
-hop and then no replies. Use a Linux host for real traces, or run the backend natively
-(`go run .`) with the frontend dev server.
+"TTL exceeded" replies traceroute depends on, so traces from there show the container's
+gateway as hop 1 and then no replies. The backend detects this (no reply from any hop
+past the first) and returns a `warning`, which the UI shows as a banner and the server
+logs. Use a Linux host for real traces, or run the backend natively with
+`scripts/dev.sh` (see [Run](#run)). A firewall that drops all TTL-exceeded replies
+triggers the same warning.
 
 Backend image on its own:
 

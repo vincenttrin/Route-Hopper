@@ -91,3 +91,29 @@ func TestTraceErrors(t *testing.T) {
 		t.Error("expected error when nothing was traced")
 	}
 }
+
+func TestNoRepliesBeyondFirstHop(t *testing.T) {
+	silent := Hop{}
+	answered := Hop{IP: netip.MustParseAddr("203.0.113.9")}
+	tests := []struct {
+		name string
+		hops []Hop
+		want bool
+	}{
+		{"no hops", nil, false},
+		{"docker desktop: gateway then silence", []Hop{answered, silent, silent, silent}, true},
+		{"nothing answered at all", []Hop{silent, silent, silent}, true},
+		{"later hop answered", []Hop{answered, silent, answered}, false},
+		{"first hop silent but later answered", []Hop{silent, silent, answered}, false},
+		{"fully answered", []Hop{answered, answered, answered}, false},
+		{"too short to judge", []Hop{answered, silent}, false},
+		{"single hop", []Hop{answered}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NoRepliesBeyondFirstHop(tt.hops); got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
