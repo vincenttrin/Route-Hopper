@@ -14,8 +14,10 @@ BACKEND_PORT=8099 scripts/dev.sh   # if 8080 is taken
 ```
 
 The script installs the frontend dependencies on first run and stops both processes
-on Ctrl-C. Backend variables such as `GEOIP_CITY_DB` pass through. The system
-`traceroute` that ships with macOS works unprivileged, so no sudo is needed.
+on Ctrl-C. It points the backend at the databases in `./geoip` (or `$GEOIP_DIR`),
+where `scripts/fetch-geoip.sh` writes them, and warns when they are missing. Other backend
+variables such as `GEOIP_CITY_DB` pass through. The system `traceroute` that ships with
+macOS works unprivileged, so no sudo is needed.
 
 To run only the backend:
 
@@ -39,13 +41,22 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
     { "hopNumber": 3, "ip": "1.0.0.1", "hostname": "one.one.one.one", "city": "Sydney",
       "country": "AU", "org": "Cloudflare", "lat": -33.86, "lng": 151.2, "rtt": 25.8 }
   ],
-  "destination": { "ip": "1.0.0.1", "city": "Sydney", "lat": -33.86, "lng": 151.2 }
+  "destination": { "ip": "1.0.0.1", "city": "Sydney", "lat": -33.86, "lng": 151.2 },
+  "reached": true
 }
 ```
 
-- `warning` (optional string) is present when the trace is probably incomplete: at
-  least three hops were traced and none past the first replied. The frontend shows it
-  above the results and the server logs it. See [Docker](#docker).
+- `reached` is false when the destination itself never answered a probe, so the last
+  hops are `ip: ""`. That is not an error: many hosts and firewalls drop traceroute
+  probes. The trace first uses the default UDP probes; if the destination does not
+  answer, it runs once more with ICMP echo (`traceroute -I`), which hosts such as
+  facebook.com answer, and keeps that result if it got through. ICMP needs
+  `CAP_NET_RAW` on Linux (macOS allows it unprivileged); without it the UDP result stands.
+- `warning` (optional string) is present when the trace is probably incomplete or
+  cannot be drawn: at least three hops were traced and none past the first replied (see
+  [Docker](#docker)), or public hops replied but none could be geolocated (no GeoIP
+  database, see [Geolocation database](#geolocation-database)). The frontend shows it
+  above the results.
 
 - A hop that never answered has an empty `ip`; a hop without geolocation (private
   addresses, unknown ranges) has `lat` and `lng` of 0.
@@ -79,8 +90,9 @@ Point a native server at the files:
 GEOIP_CITY_DB=../geoip/GeoLite2-City.mmdb GEOIP_ASN_DB=../geoip/GeoLite2-ASN.mmdb go run .
 ```
 
-Defaults are `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb` in the working directory.
-Without a City database the server still runs, with every `lat`/`lng` at 0. In Docker,
+`scripts/dev.sh` sets these for you. Run directly, the defaults are `GeoLite2-City.mmdb`
+and `GeoLite2-ASN.mmdb` in the working directory, so from `backend/` they are not found
+unless you set the variables as above. Without a City database the server still runs, with every `lat`/`lng` at 0. In Docker,
 compose mounts `./geoip` at `/data`.
 
 **Attribution:** the DB-IP Lite databases are licensed

@@ -106,7 +106,8 @@ func TestTraceWarnsWhenNoRepliesBeyondFirstHop(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			api := NewAPI(&fakeTracer{hops: tt.hops}, fakeResolver{}, geo.Nop{}, 1)
+			g := fakeGeo{addr("93.184.216.34"): {Lat: 52.37, Lng: 4.9, City: "Amsterdam"}}
+			api := NewAPI(&fakeTracer{hops: tt.hops}, fakeResolver{}, g, 1)
 			rec := post(api, `{"endpoint":"8.8.8.8"}`)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status %d: %s", rec.Code, rec.Body)
@@ -124,6 +125,74 @@ func TestTraceWarnsWhenNoRepliesBeyondFirstHop(t *testing.T) {
 				}
 			} else if got.Warning != "" || strings.Contains(rec.Body.String(), "warning") {
 				t.Errorf("unexpected warning in %s", rec.Body)
+			}
+		})
+	}
+}
+
+func decodeTrace(t *testing.T, api *API, endpoint string) traceResponse {
+	t.Helper()
+	rec := post(api, `{"endpoint":"`+endpoint+`"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	var got traceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func TestTraceReportsWhetherDestinationReplied(t *testing.T) {
+	path := []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("96.34.20.4")}, {Number: 3, IP: addr("157.240.69.22")}}
+	tests := []struct {
+		name string
+		hops []trace.Hop
+		want bool
+	}{
+		{"destination answered", append(path[:3:3], trace.Hop{Number: 4, IP: addr("57.144.20.1")}), true},
+		// facebook.com: the path answers, then silence up to the hop limit.
+		{"destination silent", append(path[:3:3], trace.Hop{Number: 4}, trace.Hop{Number: 5}), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := fakeGeo{addr("96.34.20.4"): {Lat: 42.5, Lng: -89, City: "Beloit"}}
+			api := NewAPI(&fakeTracer{hops: tt.hops}, fakeResolver{}, g, 1)
+			got := decodeTrace(t, api, "57.144.20.1")
+			if got.Reached != tt.want {
+				t.Errorf("reached = %v, want %v", got.Reached, tt.want)
+			}
+			if got.Warning != "" {
+				t.Errorf("a silent destination is not a warning: %q", got.Warning)
+			}
+		})
+	}
+}
+
+func TestTraceWarnsWhenNothingCanBeLocated(t *testing.T) {
+	hops := []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("96.34.20.4")}, {Number: 3, IP: addr("93.184.216.34")}}
+	located := fakeGeo{addr("96.34.20.4"): {Lat: 42.5, Lng: -89, City: "Beloit"}}
+	tests := []struct {
+		name     string
+		geo      geo.Locator
+		hops     []trace.Hop
+		wantWarn bool
+	}{
+		// scripts/dev.sh started the backend without finding the downloaded databases.
+		{"no database", geo.Nop{}, hops, true},
+		{"database knows a hop", located, hops, false},
+		{"only private hops, nothing to locate", geo.Nop{}, hops[:1], false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			api := NewAPI(&fakeTracer{hops: tt.hops}, fakeResolver{}, tt.geo, 1)
+			got := decodeTrace(t, api, "93.184.216.34")
+			if tt.wantWarn {
+				if !strings.Contains(got.Warning, "GeoIP") || !strings.Contains(got.Warning, "fetch-geoip.sh") {
+					t.Errorf("warning = %q", got.Warning)
+				}
+			} else if got.Warning != "" {
+				t.Errorf("unexpected warning %q", got.Warning)
 			}
 		})
 	}

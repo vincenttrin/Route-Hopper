@@ -16,7 +16,11 @@ function networkOf(hop) {
 const clean = (v) => (v && v !== '*' ? v : null);
 const hasGeo = (h) => Number.isFinite(h.lat) && Number.isFinite(h.lng) && !(h.lat === 0 && h.lng === 0);
 
-/** Turns the API response into display-ready hops with network, colour and lane. */
+/**
+ * Turns the API response into display-ready hops with network, colour and lane.
+ * `reached` is false when the destination never answered; the silent hops at the
+ * end of such a trace are folded into one row (`span` counts the hops it covers).
+ */
 export function normalizeTrace(raw) {
   const colors = new Map();
   let lane = 0;
@@ -32,6 +36,7 @@ export function normalizeTrace(raw) {
       lat: h.lat,
       lng: h.lng,
       rtt: ip && Number.isFinite(h.rtt) ? h.rtt : null,
+      span: 1,
     };
     hop.located = Boolean(ip) && hasGeo(hop);
     hop.network = networkOf(hop);
@@ -48,9 +53,24 @@ export function normalizeTrace(raw) {
     return hop;
   });
   // A no-reply hop borrows the lane of the hop before it, which is already set above.
+  const reached = raw.reached !== false;
+  let tail = hops.length;
+  while (tail > 0 && !hops[tail - 1].ip) tail--;
+  const lastReply = tail > 0 ? hops[tail - 1].n : null;
+  if (hops.length - tail > 1) {
+    hops[tail].span = hops.length - tail;
+    hops.length = tail + 1;
+  }
   const last = hops[hops.length - 1];
-  if (last) last.destination = true;
-  return { hops, networks: [...colors].map(([name, color]) => ({ name, color })) };
+  if (last && reached) last.destination = true;
+  const d = raw.destination;
+  return {
+    hops,
+    networks: [...colors].map(([name, color]) => ({ name, color })),
+    reached,
+    lastReply,
+    destination: d?.ip ? { ip: d.ip, city: clean(d.city), lat: d.lat, lng: d.lng, located: hasGeo(d) } : null,
+  };
 }
 
 const rad = (d) => (d * Math.PI) / 180;
@@ -66,11 +86,13 @@ export function summarize(hops, networks) {
   const located = hops.filter((h) => h.located);
   let km = 0;
   for (let i = 1; i < located.length; i++) km += distanceKm(located[i - 1], located[i]);
+  const last = hops[hops.length - 1];
   return {
-    hops: hops.length,
+    hops: hops.reduce((n, h) => n + h.span, 0),
     networks: networks.filter((n) => n.name !== LOCAL).length,
     km: Math.round(km),
-    rtt: hops.length ? hops[hops.length - 1].rtt : null,
+    // Only the destination's own reply is a latency to it.
+    rtt: last?.destination ? last.rtt : null,
   };
 }
 

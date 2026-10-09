@@ -152,7 +152,7 @@ docker-compose down
 - **Line Diagram (Main View):** Transit-map style rendering with hops as stations stacked top-to-bottom. Lanes alternate when the packet switches networks. Hop cards show IP, hostname, city, RTT; click to select and highlight on the map.
 - **Geography Map (Side Panel):** Leaflet map with OpenStreetMap tiles showing only located hops. Polylines connect hops, color-coded by network. Destination marked with a yellow dot. Map pans and zooms to selected hop.
 - **Network Legend:** Lists all networks crossed, with color swatches. Private IPs shown as "Local network" (grey).
-- **Stats:** Distance between located hops (km), latency to destination (RTT of final hop if present, else "-"), count of networks crossed.
+- **Stats:** Distance between located hops (km), latency to destination (RTT of the final hop if the destination replied, else "-"), count of networks crossed.
 - **Example Trace:** First load shows a sample trace across ISP networks from Omaha to Amsterdam, providing clear orientation before the user enters their own endpoint.
 
 ### Hop Processing (Frontend)
@@ -160,7 +160,7 @@ docker-compose down
 - **Not Located:** Hops with an IP but no geolocation data (missing lat/lng or both zero) appear in the line diagram but not on the map.
 - **Local Network:** Private IPs (10.x, 192.168.x, 172.16-31.x, 127.x, 169.254.x) labeled as "Local network" (grey color).
 - **Network Name:** Derived from the `org` field if present; otherwise extracted from the last two labels of the hostname (e.g., "cox.net" from "chgil-cr1.cox.net"); defaults to "Unknown network" if no hostname.
-- **Destination RTT:** Only shown if the last hop has an RTT value; otherwise shows "-".
+- **Destination RTT:** Only shown if the destination itself replied (`reached`) and the last hop has an RTT value; otherwise shows "-". When it never replies, trailing no-reply hops fold into one row and the map marks the destination as unconfirmed.
 
 ### Error Handling
 - Invalid endpoints (non-resolvable domains) - backend returns error

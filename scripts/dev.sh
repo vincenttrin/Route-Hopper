@@ -3,7 +3,9 @@
 # TTL-exceeded replies (Docker Desktop on macOS and Windows drops them).
 # Usage: scripts/dev.sh            (backend :8080, frontend http://localhost:5173)
 #        BACKEND_PORT=8099 scripts/dev.sh
-# GEOIP_CITY_DB, GEOIP_ASN_DB and the other backend variables pass through.
+# The GeoIP databases are read from $GEOIP_DIR (default ./geoip, where
+# scripts/fetch-geoip.sh puts them); GEOIP_CITY_DB, GEOIP_ASN_DB and the other
+# backend variables pass through.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 port="${BACKEND_PORT:-8080}"
@@ -15,6 +17,13 @@ if nc -z localhost "$port" 2>/dev/null; then
   echo "port $port is already in use; pick another with BACKEND_PORT=<port>" >&2
   exit 1
 fi
+
+# The backend runs from backend/, so without explicit paths it would look for the
+# databases there instead of where fetch-geoip.sh wrote them, and plot nothing.
+geo_dir="${GEOIP_DIR:-$root/geoip}"
+export GEOIP_CITY_DB="${GEOIP_CITY_DB:-$geo_dir/GeoLite2-City.mmdb}"
+export GEOIP_ASN_DB="${GEOIP_ASN_DB:-$geo_dir/GeoLite2-ASN.mmdb}"
+[ -f "$GEOIP_CITY_DB" ] || echo "no GeoIP database at $GEOIP_CITY_DB: traces will show no map. Run scripts/fetch-geoip.sh, then restart." >&2
 
 [ -d "$root/frontend/node_modules" ] || (cd "$root/frontend" && npm install)
 

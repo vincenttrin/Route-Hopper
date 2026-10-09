@@ -61,6 +61,9 @@ type destinationJSON struct {
 type traceResponse struct {
 	Hops        []hopJSON       `json:"hops"`
 	Destination destinationJSON `json:"destination"`
+	// Reached is false when the destination itself never answered a probe.
+	// Many hosts and firewalls drop traceroute probes, so this is not an error.
+	Reached bool `json:"reached"`
 	// Warning explains why the trace may be incomplete. Optional.
 	Warning string `json:"warning,omitempty"`
 }
@@ -71,6 +74,12 @@ type traceResponse struct {
 const noRepliesWarning = "No hop past the first one replied, so this trace is incomplete. " +
 	"If the backend runs in Docker Desktop (macOS or Windows), its network drops the replies " +
 	"traceroute needs: run the backend natively (see backend/README.md) or on a Linux host."
+
+// noLocationWarning is shown when the trace crossed public addresses but none
+// could be placed on the map. The usual cause is a backend started without the
+// GeoIP databases (it logs "geolocation disabled" once at startup).
+const noLocationWarning = "None of the hops could be placed on the map. The backend has no GeoIP database loaded, " +
+	"or it has no entry for these addresses. Run scripts/fetch-geoip.sh, then restart the backend (see backend/README.md)."
 
 // Trace handles POST /api/trace.
 func (a *API) Trace(w http.ResponseWriter, r *http.Request) {
@@ -110,21 +119,27 @@ func (a *API) Trace(w http.ResponseWriter, r *http.Request) {
 		writeTraceError(w, err)
 		return
 	}
-	resp := traceResponse{Hops: make([]hopJSON, 0, len(hops))}
+	resp := traceResponse{Hops: make([]hopJSON, 0, len(hops)), Reached: trace.Reached(hops, ip)}
+	var anyPublic, anyLocated bool
 	for _, h := range hops {
 		hj := hopJSON{HopNumber: h.Number, Hostname: h.Hostname, RTT: h.RTT}
 		if h.IP.IsValid() {
 			hj.IP = h.IP.String()
+			anyPublic = anyPublic || geo.IsPublic(h.IP)
 			if loc, ok := a.locate(h.IP); ok {
+				anyLocated = true
 				hj.City, hj.Country, hj.Org = loc.City, loc.Country, loc.Org
 				hj.Lat, hj.Lng = loc.Lat, loc.Lng
 			}
 		}
 		resp.Hops = append(resp.Hops, hj)
 	}
-	if trace.NoRepliesBeyondFirstHop(hops) {
+	switch {
+	case trace.NoRepliesBeyondFirstHop(hops):
 		log.Printf("trace to %s: no replies beyond the first hop (Docker Desktop network, or a firewall dropping TTL-exceeded replies)", ip)
 		resp.Warning = noRepliesWarning
+	case anyPublic && !anyLocated:
+		resp.Warning = noLocationWarning
 	}
 	resp.Destination.IP = ip.String()
 	if loc, ok := a.locate(ip); ok {
