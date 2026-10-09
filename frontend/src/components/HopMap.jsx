@@ -41,7 +41,10 @@ export default function HopMap({ hops, destination, selected, onSelect }) {
       className: 'tiles-muted',
     }).addTo(map.current);
     layer.current = L.layerGroup().addTo(map.current);
+    const resize = new ResizeObserver(() => map.current?.invalidateSize());
+    resize.observe(el.current);
     return () => {
+      resize.disconnect();
       map.current.remove();
       map.current = null;
     };
