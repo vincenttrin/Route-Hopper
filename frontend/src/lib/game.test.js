@@ -25,18 +25,21 @@ describe('scoreGuess', () => {
     expect(scoreGuess(990, 1000)).toBe(100);
   });
 
-  it('drops continuously just past the 10 km boundary', () => {
-    expect(scoreGuess(1011, 1000)).toBe(100); // 0.1% past rounds to 100
-    expect(scoreGuess(1015, 1000)).toBe(99);
-    expect(scoreGuess(985, 1000)).toBe(99);
-    expect(scoreGuess(1020, 1000)).toBe(98);
+  it('scores the ratio of the smaller to the larger distance', () => {
+    expect(scoreGuess(10000, 13146)).toBe(76);
+    expect(scoreGuess(500, 1000)).toBe(50);
+    expect(scoreGuess(250, 1000)).toBe(25);
   });
 
-  it('follows the documented curve past the tolerance: 100 * (1 - error)^2', () => {
-    expect(scoreGuess(1060, 1000)).toBe(90); // 5% past the tolerance
-    expect(scoreGuess(890, 1000)).toBe(81); // 10% past, under
-    expect(scoreGuess(1260, 1000)).toBe(56); // 25% past
-    expect(scoreGuess(490, 1000)).toBe(25); // 50% past, under
+  it('scores overshooting the same as undershooting', () => {
+    expect(scoreGuess(13146, 10000)).toBe(76);
+    expect(scoreGuess(2000, 1000)).toBe(scoreGuess(500, 1000));
+  });
+
+  it('drops just past the 10 km boundary', () => {
+    expect(scoreGuess(1011, 1000)).toBe(99);
+    expect(scoreGuess(989, 1000)).toBe(99);
+    expect(scoreGuess(1100, 1000)).toBe(91);
   });
 
   it('applies the tolerance in km, not in the display unit', () => {
@@ -44,17 +47,14 @@ describe('scoreGuess', () => {
     expect(scoreGuess(toKm(6.2, 'mi') + actualKm, actualKm)).toBe(100); // about 10 km
   });
 
-  it('scores over- and under-shooting by the same distance alike', () => {
-    expect(scoreGuess(1300, 1000)).toBe(scoreGuess(700, 1000));
-  });
-
-  it('is 0 at the error threshold and beyond it', () => {
-    expect(scoreGuess(2010, 1000)).toBe(0);
-    expect(scoreGuess(5000, 1000)).toBe(0);
+  it('handles small values without dividing by zero', () => {
+    expect(scoreGuess(1, 1)).toBe(100);
+    expect(scoreGuess(0.5, 1)).toBe(100); // within the tolerance
+    expect(scoreGuess(1000, 1)).toBe(0);
     expect(scoreGuess(1, 1000)).toBe(0);
   });
 
-  it('is never negative, even for a huge error', () => {
+  it('stays within 0 and 100, even for a huge error', () => {
     expect(scoreGuess(MAX_GUESS_KM, 1000)).toBe(0);
     expect(scoreGuess(1e12, 1.5)).toBe(0);
     expect(scoreGuess(1, 400000)).toBe(0);
@@ -128,7 +128,7 @@ describe('parseGuess', () => {
 
 describe('judgeRound', () => {
   it('scores a route with a distance', () => {
-    expect(judgeRound(890, 1000, 5)).toEqual({ status: 'scored', score: 81, guessKm: 890, actualKm: 1000 });
+    expect(judgeRound(890, 1000, 5)).toEqual({ status: 'scored', score: 89, guessKm: 890, actualKm: 1000 });
   });
 
   it('does not score a route with fewer than two located hops', () => {
