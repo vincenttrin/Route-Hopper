@@ -6,10 +6,19 @@ import { normalizeTrace, summarize, LOCAL_COLOR } from './lib/trace.js';
 import { runTrace } from './services/api.js';
 import { SAMPLE_TRACE, SAMPLE_ENDPOINT } from './services/sample.js';
 
-function routeTitle(hops) {
+function routeTitle(hops, endpoint) {
   const places = hops.filter((h) => h.located && h.city).map((h) => h.city);
-  if (places.length < 2) return `${hops.length} hops`;
+  if (places.length < 2) return endpoint;
   return `${places[0]} to ${places[places.length - 1]}`;
+}
+
+function unreachedMessage(endpoint, trace) {
+  const seen = trace.lastReply ? ` Hop ${trace.lastReply} was the last to reply.` : '';
+  const dest = trace.destination ? ` (${trace.destination.ip})` : '';
+  return (
+    `${endpoint}${dest} never replied to the trace probes.${seen} Many servers and firewalls silently drop ` +
+    'traceroute probes, so this does not mean the site is down.'
+  );
 }
 
 export default function App() {
@@ -23,6 +32,8 @@ export default function App() {
 
   const trace = useMemo(() => normalizeTrace(raw), [raw]);
   const stats = useMemo(() => summarize(trace.hops, trace.networks), [trace]);
+  // Where the route was heading, when the destination never answered and has a known location.
+  const unreached = !trace.reached && trace.destination?.located ? trace.destination : null;
 
   const submit = async (value) => {
     abort.current?.abort();
@@ -47,8 +58,8 @@ export default function App() {
     <div className="app">
       <header className="bar">
         <div className="route">
-          <span>{routeTitle(trace.hops)}</span>
-          <b>{trace.hops.length} hops</b>
+          <span>{routeTitle(trace.hops, endpoint)}</span>
+          <b>{stats.hops} hops</b>
         </div>
         <TraceInput initial={endpoint} busy={busy} onSubmit={submit} />
       </header>
@@ -62,6 +73,11 @@ export default function App() {
           {raw.warning}
         </div>
       )}
+      {!isExample && !error && !trace.reached && (
+        <div className="notice notice-info" role="status">
+          {unreachedMessage(endpoint, trace)}
+        </div>
+      )}
       {isExample && !error && (
         <div className="notice notice-info">Example trace. Enter an endpoint above to trace your own route.</div>
       )}
@@ -72,7 +88,7 @@ export default function App() {
         <aside className="side">
           <div>
             <h2>Geography</h2>
-            <HopMap hops={trace.hops} selected={selected} onSelect={setSelected} />
+            <HopMap hops={trace.hops} destination={unreached} selected={selected} onSelect={setSelected} />
           </div>
           <div className="stats">
             <div>

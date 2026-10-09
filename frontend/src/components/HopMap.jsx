@@ -13,7 +13,16 @@ function tooltipFor(h) {
   return root;
 }
 
-export default function HopMap({ hops, selected, onSelect }) {
+function destinationTooltip(d) {
+  const root = document.createElement('div');
+  const label = document.createElement('b');
+  label.textContent = 'Destination';
+  root.append(label, ` ${d.city || d.ip}`, document.createElement('br'), `${d.ip} - no reply`);
+  return root;
+}
+
+/** `destination` is only passed when no probe reached it; it is drawn as unconfirmed. */
+export default function HopMap({ hops, destination, selected, onSelect }) {
   const el = useRef(null);
   const map = useRef(null);
   const layer = useRef(null);
@@ -57,10 +66,22 @@ export default function HopMap({ hops, selected, onSelect }) {
       m.on('click', () => onSelectRef.current(h.n));
       markers.current.set(h.n, m);
     });
-    if (located.length) {
-      map.current.fitBounds(L.latLngBounds(located.map((h) => [h.lat, h.lng])), { padding: [40, 40], maxZoom: 6 });
+    const points = located.map((h) => [h.lat, h.lng]);
+    if (destination) {
+      const to = [destination.lat, destination.lng];
+      if (located.length) {
+        const from = located[located.length - 1];
+        L.polyline([[from.lat, from.lng], to], { color: INK, weight: 3, opacity: 0.7, dashArray: '2 8', lineCap: 'round' }).addTo(group);
+      }
+      L.circleMarker(to, { radius: 8, color: INK, weight: 3, dashArray: '3 3', fillColor: DEST, fillOpacity: 0.35 })
+        .bindTooltip(destinationTooltip(destination), { direction: 'top', offset: [0, -6] })
+        .addTo(group);
+      points.push(to);
     }
-  }, [hops]);
+    if (points.length) {
+      map.current.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 6 });
+    }
+  }, [hops, destination]);
 
   useEffect(() => {
     markers.current.forEach((m, n) => {

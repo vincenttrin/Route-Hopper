@@ -29,7 +29,8 @@ type Runner func(ctx context.Context, name string, args ...string) ([]byte, erro
 type Tracer struct {
 	Run          Runner
 	LookupAddr   func(ctx context.Context, ip string) ([]string, error)
-	Timeout      time.Duration // overall limit for one trace
+	Timeout      time.Duration // limit for the UDP pass
+	ICMPTimeout  time.Duration // separate limit for the ICMP fallback pass
 	DNSTimeout   time.Duration // limit for each reverse lookup
 	ProbesPerHop int
 	WaitSeconds  int
@@ -41,6 +42,7 @@ func NewTracer() *Tracer {
 		Run:          execRun,
 		LookupAddr:   net.DefaultResolver.LookupAddr,
 		Timeout:      60 * time.Second,
+		ICMPTimeout:  15 * time.Second,
 		DNSTimeout:   2 * time.Second,
 		ProbesPerHop: 2,
 		WaitSeconds:  1,
@@ -56,8 +58,10 @@ func execRun(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return out.Bytes(), err
 }
 
-// Trace runs traceroute towards ip. If the time limit is hit, the hops seen so
-// far are returned rather than an error.
+// Trace runs traceroute towards ip. If the destination does not answer the
+// default UDP probes, the route is probed again with ICMP echo, which hosts
+// such as facebook.com answer. If the time limit is hit, the hops seen so far
+// are returned rather than an error.
 func (t *Tracer) Trace(ctx context.Context, ip netip.Addr, maxHops int) ([]Hop, error) {
 	if maxHops <= 0 {
 		maxHops = DefaultMaxHops
@@ -65,33 +69,67 @@ func (t *Tracer) Trace(ctx context.Context, ip netip.Addr, maxHops int) ([]Hop, 
 	if maxHops > MaxHops {
 		maxHops = MaxHops
 	}
-	bin := "traceroute"
-	if ip.Is6() {
-		bin = "traceroute6"
+	runCtx, cancel := context.WithTimeout(ctx, t.Timeout)
+	defer cancel()
+	hops, err := t.probe(runCtx, ip, maxHops, false)
+	if err != nil && len(hops) == 0 {
+		var notFound *exec.Error
+		if errors.As(err, &notFound) {
+			return nil, fmt.Errorf("%s is not installed on the server", binFor(ip))
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("%s failed: %w", binFor(ip), err)
 	}
-	args := []string{
+	// The ICMP pass has its own time limit so a long silent UDP tail cannot
+	// starve it. It only replaces the UDP hops if it got further: ICMP echo
+	// needs CAP_NET_RAW on Linux, and some hosts ignore it as well.
+	if !Reached(hops, ip) && ctx.Err() == nil {
+		icmpCtx, icmpCancel := context.WithTimeout(ctx, t.ICMPTimeout)
+		defer icmpCancel()
+		if icmp, _ := t.probe(icmpCtx, ip, maxHops, true); Reached(icmp, ip) {
+			hops = icmp
+		}
+	}
+	t.resolveNames(ctx, hops)
+	return hops, nil
+}
+
+func binFor(ip netip.Addr) string {
+	if ip.Is6() {
+		return "traceroute6"
+	}
+	return "traceroute"
+}
+
+// probe runs one traceroute pass, with ICMP echo probes when icmp is set, and
+// parses what it printed. Output captured before an error is still returned.
+func (t *Tracer) probe(ctx context.Context, ip netip.Addr, maxHops int, icmp bool) ([]Hop, error) {
+	var args []string
+	if icmp {
+		args = append(args, "-I")
+	}
+	args = append(args,
 		"-n",
 		"-m", strconv.Itoa(maxHops),
 		"-q", strconv.Itoa(t.ProbesPerHop),
 		"-w", strconv.Itoa(t.WaitSeconds),
 		ip.String(),
-	}
-	runCtx, cancel := context.WithTimeout(ctx, t.Timeout)
-	defer cancel()
-	out, err := t.Run(runCtx, bin, args...)
-	hops := Parse(string(out))
-	if err != nil && len(hops) == 0 {
-		var notFound *exec.Error
-		if errors.As(err, &notFound) {
-			return nil, fmt.Errorf("%s is not installed on the server", bin)
+	)
+	out, err := t.Run(ctx, binFor(ip), args...)
+	return Parse(string(out)), err
+}
+
+// Reached reports whether the destination itself answered a probe, as opposed
+// to the trace ending (or timing out) somewhere along the path.
+func Reached(hops []Hop, dest netip.Addr) bool {
+	for _, h := range hops {
+		if h.IP.IsValid() && h.IP.Unmap() == dest.Unmap() {
+			return true
 		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return nil, fmt.Errorf("%s failed: %w", bin, err)
 	}
-	t.resolveNames(ctx, hops)
-	return hops, nil
+	return false
 }
 
 // resolveNames fills in reverse DNS names concurrently.

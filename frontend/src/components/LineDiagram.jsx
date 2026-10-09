@@ -67,9 +67,12 @@ export default function LineDiagram({ hops, selected, onSelect }) {
       {hops.map((h) => {
         const pad = String(h.n).padStart(2, '0');
         const title = h.network ? h.city || h.hostname || h.ip : 'No reply';
-        const meta = h.network
-          ? [`HOP ${pad}`, h.hostname, h.ip].filter(Boolean).join(' - ')
-          : `HOP ${pad} - * * * - probe timed out, route continues`;
+        const ends = h === hops[hops.length - 1];
+        const silentMeta =
+          h.span > 1
+            ? `HOPS ${pad}-${String(h.n + h.span - 1).padStart(2, '0')} - * * * - no reply, the trace ends here`
+            : `HOP ${pad} - * * * - ${ends ? 'no reply, the trace ends here' : 'probe timed out, route continues'}`;
+        const meta = h.network ? [`HOP ${pad}`, h.hostname, h.ip].filter(Boolean).join(' - ') : silentMeta;
         const selectable = h.located;
         return (
           <li key={h.n} className={`row${selected === h.n ? ' is-selected' : ''}${h.network ? '' : ' is-miss'}`}>
