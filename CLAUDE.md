@@ -140,7 +140,7 @@ docker-compose down
 - Execute `traceroute` (or `traceroute6` for IPv6) with flags: `-n` (no DNS during trace), `-q 2` (2 probes per hop), `-w 1` (1 second timeout), `-m <maxHops>`
 - Parse output to extract hop information (IP, hostname, RTT); handles both Linux and macOS formats
 - Enrich hops with concurrent reverse DNS lookups (separate from traceroute, with 2s timeout per lookup)
-- Return partial results if 60 second overall limit is hit; gracefully handle unreachable hops (empty IP, zero coordinates)
+- Return partial results if the 60 second UDP limit or 15 second ICMP fallback limit is hit; gracefully handle unreachable hops (empty IP, zero coordinates)
 
 ### Geolocation (Backend)
 - Load MaxMind GeoIP2 City and ASN .mmdb files at startup (optional; DB-IP "City Lite" also compatible)
