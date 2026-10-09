@@ -22,7 +22,7 @@ export default function GamePanel({ status, unit, guess, guessError, guessRef, r
       {status === 'ready' && (
         <p>
           Press <b>Hop!</b> and watch the bunny follow the packet's route. When it gets home, guess how far the packet travelled and
-          get a score from 0 to 100.
+          get a score from 0 to 100. Within 10 km of the real distance is a perfect 100.
         </p>
       )}
       {status === 'running' && <p>The bunny is on the trail. Watch the route; you guess the total distance when it gets home.</p>}

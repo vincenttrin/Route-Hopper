@@ -31,16 +31,21 @@ The **actual distance** is the sum of the great-circle distances between consecu
 that have a location, in order. Hops without a location (private addresses, no reply, no
 database entry) are skipped.
 
-The **score** depends on the relative error `e = |guess - actual| / actual`:
+The **score** depends on how far the guess is from the actual distance. A guess within
+10 km of the actual distance (over or under, always measured in km whatever unit you type in)
+scores a full 100. Beyond that, the relative error is measured past the 10 km tolerance,
+`e = (|guess - actual| - 10 km) / actual`:
 
 ```
+score = 100                          for |guess - actual| <= 10 km
 score = round(100 * (1 - e) ^ 2)     for e < 1
 score = 0                            for e >= 1
 ```
 
-An exact guess scores 100, 5% off scores 90, 10% off 81, 25% off 56, 50% off 25, and a
-guess off by the whole distance or more (such as double the actual distance) scores 0.
-Over- and undershooting by the same distance score the same. The functions are in
+The score is continuous at the 10 km edge and never negative. Past the tolerance, 5% off
+scores 90, 10% off 81, 25% off 56, 50% off 25, and a guess off by the whole distance or more
+(such as double the actual distance) scores 0. Over- and undershooting by the same distance
+score the same. The functions are in
 `frontend/src/lib/game.js` with tests.
 
 A round is not scored, and says why, when:
