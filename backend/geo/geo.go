@@ -2,6 +2,7 @@
 package geo
 
 import (
+	"math"
 	"net/netip"
 	"sync"
 )
@@ -66,4 +67,13 @@ func (c *cached) Lookup(ip netip.Addr) (Location, bool) {
 	c.m[ip] = cacheEntry{loc, ok}
 	c.mu.Unlock()
 	return loc, ok
+}
+
+// DistanceKm is the great-circle distance between two locations in kilometres.
+func DistanceKm(a, b Location) float64 {
+	const earthKm = 6371
+	rad := func(d float64) float64 { return d * math.Pi / 180 }
+	s := math.Sin(rad(b.Lat-a.Lat)/2)*math.Sin(rad(b.Lat-a.Lat)/2) +
+		math.Cos(rad(a.Lat))*math.Cos(rad(b.Lat))*math.Sin(rad(b.Lng-a.Lng)/2)*math.Sin(rad(b.Lng-a.Lng)/2)
+	return earthKm * 2 * math.Asin(math.Sqrt(s))
 }

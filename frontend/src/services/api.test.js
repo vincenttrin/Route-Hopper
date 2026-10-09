@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { streamTrace, StreamInterruptedError, StreamUnavailableError } from './api.js';
+import { getGeoInfo, streamTrace, StreamInterruptedError, StreamUnavailableError } from './api.js';
 
 const ndjson = (events, { status = 200, tail = '' } = {}) =>
   new Response(events.map((e) => JSON.stringify(e) + '\n').join('') + tail, { status });
@@ -82,5 +82,28 @@ describe('streamTrace', () => {
     const pending = streamTrace('example.com', 30, ctl.signal, () => {});
     ctl.abort();
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+describe('getGeoInfo', () => {
+  const json = (body, status = 200) => new Response(JSON.stringify(body), { status });
+
+  it('returns what the backend reports about its database', async () => {
+    const fetchMock = mockFetch(async () => json({ available: true, provider: 'DB-IP Lite', updated: '2026-10-01' }));
+    expect(await getGeoInfo()).toEqual({ available: true, provider: 'DB-IP Lite', updated: '2026-10-01' });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/geoip');
+  });
+
+  it('returns null when the backend cannot say', async () => {
+    mockFetch(async () => json({}, 404));
+    expect(await getGeoInfo()).toBeNull();
+    mockFetch(async () => json({ nope: 1 }));
+    expect(await getGeoInfo()).toBeNull();
+    mockFetch(async () => new Response('<html>', { status: 200 }));
+    expect(await getGeoInfo()).toBeNull();
+    mockFetch(async () => {
+      throw new TypeError('offline');
+    });
+    expect(await getGeoInfo()).toBeNull();
   });
 });

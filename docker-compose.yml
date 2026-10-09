@@ -3,9 +3,14 @@ services:
     build: ./backend
     environment:
       ALLOW_PRIVATE_TARGETS: ${ALLOW_PRIVATE_TARGETS:-false}
+      # The backend downloads the GeoIP databases on first start and refreshes them monthly.
+      # Set a free MaxMind key to use GeoLite2 instead of the keyless DB-IP Lite default.
+      GEOIP_AUTO_UPDATE: ${GEOIP_AUTO_UPDATE:-true}
+      MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
     volumes:
-      # Populated by scripts/fetch-geoip.sh. See backend/README.md.
-      - ${GEOIP_DIR:-./geoip}:/data:ro
+      # A named volume keeps the databases across restarts. GEOIP_DIR=./geoip uses a host
+      # folder instead (it must be writable by uid 10001). See backend/README.md.
+      - ${GEOIP_DIR:-geoip}:/data
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
       interval: 10s
@@ -21,3 +26,6 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  geoip:

@@ -151,6 +151,18 @@ button, input { font: inherit; border-radius: 0; }
 .game .go { padding: 8px 18px; font-size: 16px; }
 .again { margin-top: 12px; font: 700 16px var(--display); background: var(--bar); color: var(--paper); border: 0; border-radius: 10px; padding: 8px 18px; cursor: pointer; box-shadow: 0 3px 0 var(--bar-deep); }
 .again:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--bar-deep); }
+.game-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 12px; }
+/* The share control's parts join the action row: its button beside Play again, its note and text below. */
+.share { display: contents; }
+.share-btn { order: 1; margin-top: 12px; font: 700 16px var(--display); background: var(--dest); color: var(--ink); border: 0; border-radius: 10px; padding: 8px 18px; cursor: pointer; box-shadow: 0 3px 0 #b95f0a; }
+.share-btn:hover { filter: brightness(1.05); }
+.share-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #b95f0a; }
+.game-actions .again { order: 2; }
+.game .share-note { order: 3; flex: 1 0 100%; margin: 8px 0 0; font-size: 13px; color: var(--mute); }
+.share-text { order: 3; flex: 1 0 100%; margin-top: 6px; font: 500 13px/1.4 var(--body); color: var(--ink); background: var(--paper); border: 2px solid var(--ink); border-radius: 8px; padding: 6px 8px; resize: vertical; }
+
+.geo-note { flex: none; padding: 10px clamp(12px, 2vw, 32px) 14px; font-size: 12px; color: var(--mute); border-top: 2px solid var(--meadow); }
+.geo-note a { color: inherit; }
 
 @media (max-width: 520px) {
   .route { font-size: 22px; }

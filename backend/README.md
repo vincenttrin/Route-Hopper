@@ -14,8 +14,9 @@ BACKEND_PORT=8099 scripts/dev.sh   # if 8080 is taken
 ```
 
 The script installs the frontend dependencies on first run and stops both processes
-on Ctrl-C. It points the backend at the databases in `./geoip` (or `$GEOIP_DIR`),
-where `scripts/fetch-geoip.sh` writes them, and warns when they are missing. Other backend
+on Ctrl-C. It points the backend at the databases in `./geoip` (or `$GEOIP_DIR`) and has
+the backend download them there on first start and keep them fresh (`GEOIP_AUTO_UPDATE`,
+see [Geolocation database](#geolocation-database)). Other backend
 variables such as `GEOIP_CITY_DB` pass through. The system `traceroute` that ships with
 macOS works unprivileged, so no sudo is needed.
 
@@ -36,7 +37,7 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
 ```json
 {
   "hops": [
-    { "hopNumber": 1, "ip": "192.168.1.1", "hostname": "", "lat": 0, "lng": 0, "rtt": 3.1 },
+    { "hopNumber": 1, "ip": "", "hostname": "", "lat": 0, "lng": 0, "rtt": 0, "hidden": true },
     { "hopNumber": 2, "ip": "", "hostname": "", "lat": 0, "lng": 0, "rtt": 0 },
     { "hopNumber": 3, "ip": "1.0.0.1", "hostname": "one.one.one.one", "city": "Sydney",
       "country": "AU", "org": "Cloudflare", "lat": -33.86, "lng": 151.2, "rtt": 25.8 }
@@ -58,6 +59,9 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
   database, see [Geolocation database](#geolocation-database)). The frontend shows it
   above the results.
 
+- Hop 1 is the hidden start of the route: where the trace began is withheld, see
+  [Privacy](#privacy-the-start-of-the-route-is-hidden). `hidden: true` marks it, and it
+  carries nothing else.
 - A hop that never answered has an empty `ip`; a hop without geolocation (private
   addresses, unknown ranges) has `lat` and `lng` of 0.
 - `rtt` is the mean of the answered probes in milliseconds.
@@ -90,39 +94,113 @@ than the UDP hops. Closing the connection stops the traceroute process. Behind a
 disable response buffering for this path (the response sets `X-Accel-Buffering: no`; the
 bundled `frontend/nginx.conf` also turns `proxy_buffering` off).
 
-`GET /healthz` returns `{"status":"ok"}`.
+### `GET /healthz` and `GET /api/geoip`
+
+`GET /healthz` returns `{"status":"ok","geoip":"ready"}`. The server is healthy without a
+location database (it may still be downloading, or the download failed), in which case
+`geoip` is `"missing"`: traces work, hops just have no coordinates.
+
+`GET /api/geoip` (reachable through the frontend proxy) says which database is loaded, for the
+"database last updated" note in the UI:
+
+```json
+{ "available": true, "provider": "DB-IP Lite", "updated": "2026-10-01" }
+```
+
+`updated` is the build date of the City database (UTC). Without a database it is just
+`{ "available": false }`. It changes by itself when the databases are refreshed.
+
+## Privacy: the start of the route is hidden
+
+A traceroute begins at the machine running the backend, and its first hops describe that
+network: the LAN gateway, then the ISP's routers around it. Their addresses, reverse DNS names
+(router names usually carry a city code, like `chgil-cr1.cox.net`) and locations would tell any
+client roughly where the server or its user is. **None of it leaves the backend**, on both
+`POST /api/trace` and `POST /api/trace/stream`; the logic is `handlers/redact.go`, with tests in
+`handlers/redact_test.go`.
+
+The **origin** is cut from the route and replaced by a single hop `{"hopNumber":1,"hidden":true}`
+with no address, host name, location, owner or latency. Later hops are renumbered after it, so
+neither the details nor the number of hidden hops can be read from the response. The origin is:
+
+1. every hop before the first public address: private (RFC 1918, ULA), loopback, link-local and
+   carrier-grade NAT (100.64.0.0/10) addresses, and silent hops;
+2. the first public hop, the access network's first router on the internet;
+3. each following hop that belongs to the same network as that first public hop, meaning the
+   same owner in the ASN database or the same registered domain in its reverse DNS name
+   (last two labels, `cox.net`), or that is located within 100 km of it (`NearSourceKm`).
+   Silent and private hops between such hops are part of the origin; if the trace ends or
+   leaves the origin before another such hop, they are sent as silent hops with no address,
+   host name or latency. This is the access
+   ISP's own backbone, up to where it hands the packet to another network.
+
+The origin ends at the first public hop that is none of these. Rules that keep the result usable:
+
+- The **destination hop is never hidden**, even if it sits right next to the source.
+- If nothing but the origin answered (Docker Desktop, a firewall dropping TTL-exceeded
+  replies), the response is just the hidden hop, and the usual `warning` explains why.
+- The frontend computes the distance, the map and the share text only from the hops it
+  receives, so the hidden hop contributes nothing to them.
+
+Limits. The first visible hop is where the trace leaves the origin network, usually an
+exchange point or a transit provider, so the source's country and rough region can still be
+guessed from it; that is deliberate, the cut hides the origin network, not the whole
+neighbourhood. Without a GeoIP database or reverse DNS names nothing says which later hops
+belong to the origin network, so only the first public hop (and what precedes it) is
+hidden, and later ISP hops may still show their names. Server logs (`log.Printf`) are
+unaffected and still see the full trace.
 
 ## Geolocation database
 
-From the repo root, fetch the free databases (no account or key needed):
+The backend can fetch and refresh its own databases, so there is nothing to set up. With
+`GEOIP_AUTO_UPDATE=true` (the default in the Docker image and in `scripts/dev.sh`; `false` when
+you run the binary yourself):
+
+- **First start.** If the files at `GEOIP_CITY_DB` and `GEOIP_ASN_DB` are missing, the server
+  starts at once without locations and downloads them in the background (about 140 MB; 10
+  to 30 seconds). The databases are hot-swapped in when they are ready, with no restart.
+  The log says `geoip: downloading ...` then `geoip: installed ...`.
+- **Refresh.** A check runs daily; once the City file is 30 days old (DB-IP publishes
+  monthly, early in the month, falling back to the previous month's file until then), both
+  databases are downloaded, opened and checked (they must be the expected City and ASN
+  types), and only then renamed into place and swapped in atomically while requests are being
+  served. If the new build is not newer than the one in use it is dropped.
+- **Failure.** Any failure (offline, HTTP error, corrupt or wrong download) is logged and the
+  databases in use stay as they are; the files on disk are untouched. The retry comes hourly
+  while there is no database at all, and daily otherwise. The server stays healthy throughout
+  and `/healthz` reports `geoip: missing` until the first database is in.
+- **Source.** Keyless DB-IP Lite (CC BY 4.0) by default; with `MAXMIND_LICENSE_KEY` set (a free
+  key), MaxMind GeoLite2. The key never appears in logs. Files are always saved as
+  `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb`, the names the paths default to.
+
+The same download code is a command, for native use or one-off refreshes. From the repo root:
 
 ```bash
 scripts/fetch-geoip.sh           # writes ./geoip (or $GEOIP_DIR); --force refreshes
 ```
 
-This downloads DB-IP Lite City and ASN (the ASN file supplies the `org` field) and
-saves them as `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb`, the names the Docker image
-and docker-compose expect. It is idempotent (existing files are kept unless `--force`)
-and exits non-zero with a message on any failure. DB-IP updates monthly, so re-run with
-`--force` to refresh. The files are git-ignored.
-
-To use MaxMind GeoLite2 instead, set a free license key:
-`MAXMIND_LICENSE_KEY=... scripts/fetch-geoip.sh --force`.
+which runs `go run . fetch-geoip [--force]` in `backend/` (so it needs Go). Existing files are
+kept unless `--force` (or `FORCE=1`); it exits non-zero with a message on any failure.
+`MAXMIND_LICENSE_KEY=... scripts/fetch-geoip.sh --force` switches to MaxMind. The files are
+git-ignored. Code: `geo/source.go` (downloads), `geo/update.go` (the update and the schedule),
+`geo/swap.go` (the hot swap).
 
 Point a native server at the files:
 
 ```bash
-GEOIP_CITY_DB=../geoip/GeoLite2-City.mmdb GEOIP_ASN_DB=../geoip/GeoLite2-ASN.mmdb go run .
+GEOIP_CITY_DB=../geoip/GeoLite2-City.mmdb GEOIP_ASN_DB=../geoip/GeoLite2-ASN.mmdb GEOIP_AUTO_UPDATE=true go run .
 ```
 
 `scripts/dev.sh` sets these for you. Run directly, the defaults are `GeoLite2-City.mmdb`
 and `GeoLite2-ASN.mmdb` in the working directory, so from `backend/` they are not found
-unless you set the variables as above. Without a City database the server still runs, with every `lat`/`lng` at 0. In Docker,
-compose mounts `./geoip` at `/data`.
+unless you set the variables as above. Without a City database the server still runs, with every
+`lat`/`lng` at 0. A database that exists but cannot be opened is treated the same way (logged,
+and replaced by the next refresh).
 
 **Attribution:** the DB-IP Lite databases are licensed
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and require attribution. The
-map credits "IP geolocation by DB-IP"; keep that credit if you redistribute the app.
+map credits "IP geolocation by DB-IP" and the page footer repeats it with the database's
+last-updated date; keep that credit if you redistribute the app.
 
 ## Configuration
 
@@ -130,6 +208,8 @@ map credits "IP geolocation by DB-IP"; keep that credit if you redistribute the 
 | --- | --- | --- |
 | `PORT` | `8080` | Listen port |
 | `GEOIP_CITY_DB` / `GEOIP_ASN_DB` | see above | Database paths |
+| `GEOIP_AUTO_UPDATE` | `false` (`true` in the Docker image) | Download missing databases and refresh them monthly |
+| `MAXMIND_LICENSE_KEY` | unset | Use MaxMind GeoLite2 instead of DB-IP Lite |
 | `ALLOW_PRIVATE_TARGETS` | `false` | Allow tracing loopback/private addresses (local dev only) |
 | `MAX_CONCURRENT_TRACES` | `4` | Traces running at once |
 | `RATE_LIMIT_PER_MINUTE` | `20` | Per client address, burst of 5 |
@@ -142,11 +222,20 @@ forwarded-header handling before exposing this directly.
 
 From the repo root, `docker compose up --build` serves the frontend on
 http://localhost:3000 (`PORT` to change it) and proxies `/api` to the backend, which is
-not published on the host. Run `scripts/fetch-geoip.sh` first to populate `./geoip` (or set `GEOIP_DIR`).
+not published on the host. The backend downloads the location databases itself on first
+start (see [Geolocation database](#geolocation-database)).
+
+The databases live in the `geoip` named volume mounted at `/data`, so they survive restarts
+and `docker compose up --build`; `docker compose down -v` deletes them (they download again).
+To use a host folder instead, set `GEOIP_DIR=./geoip`: the backend runs as uid 10001, so on
+Linux the folder must be writable by it (`chown 10001 geoip`), or it cannot save its downloads
+(it logs the error and keeps running without locations). Pass `MAXMIND_LICENSE_KEY` in the
+environment to use GeoLite2, or `GEOIP_AUTO_UPDATE=false` to manage the files yourself.
 
 Docker Desktop on macOS and Windows runs containers behind a NAT that drops the
-"TTL exceeded" replies traceroute depends on, so traces from there show the container's
-gateway as hop 1 and then no replies. The backend detects this (no reply from any hop
+"TTL exceeded" replies traceroute depends on, so traces from there show nothing past the
+container's gateway (which is part of the hidden start, so the UI shows only that, or the
+destination when it answers). The backend detects this (no reply from any hop
 past the first) and returns a `warning`, which the UI shows as a banner and the server
 logs. Use a Linux host for real traces, or run the backend natively with
 `scripts/dev.sh` (see [Run](#run)). A firewall that drops all TTL-exceeded replies
@@ -156,7 +245,7 @@ Backend image on its own:
 
 ```bash
 docker build -t traffic-visualizer-backend .
-docker run --rm -p 8080:8080 -v /path/to/dbs:/data traffic-visualizer-backend
+docker run --rm -p 8080:8080 -v geoip:/data traffic-visualizer-backend
 ```
 
 The image runs as a non-root user. The system traceroute uses UDP probes and does not

@@ -4,10 +4,12 @@ import LineDiagram from './components/LineDiagram.jsx';
 import HopMap from './components/HopMap.jsx';
 import LiveStatus from './components/LiveStatus.jsx';
 import GamePanel from './components/GamePanel.jsx';
+import GeoNote from './components/GeoNote.jsx';
 import Bunny from './components/Bunny.jsx';
 import { normalizeTrace, summarize, LOCAL_COLOR } from './lib/trace.js';
 import { toRaw } from './lib/stream.js';
 import { usePacedReveal, HOP_MS } from './lib/pace.js';
+import { tripSummary } from './lib/share.js';
 import { parseGuess, judgeRound, unscoreableReason, fromKm, UNITS } from './lib/game.js';
 import { runTrace, streamTrace, StreamUnavailableError, StreamInterruptedError } from './services/api.js';
 import { SAMPLE_TRACE, SAMPLE_ENDPOINT } from './services/sample.js';
@@ -84,6 +86,11 @@ export default function App() {
     return () => clearTimeout(id);
   }, [hopping]);
   const status = !round ? 'ready' : hopping || (finished && !landed) ? 'running' : !finished ? 'incomplete' : (result?.status ?? 'guessing');
+  // A finished round can be shared once it has its score, or when there is nothing to guess. The example is nobody's trip.
+  const shareText = useMemo(
+    () => (!isExample && (status === 'scored' || status === 'unscoreable') ? tripSummary({ endpoint, trace, stats, result, unit }) : null),
+    [isExample, status, endpoint, trace, stats, result, unit],
+  );
   useEffect(() => {
     if (status === 'guessing') guessRef.current?.focus();
   }, [status]);
@@ -252,6 +259,7 @@ export default function App() {
             guessRef={guessRef}
             result={result}
             best={best}
+            shareText={shareText}
             onGuess={(v) => {
               setGuess(v);
               setGuessError(null);
@@ -291,6 +299,7 @@ export default function App() {
           </div>
         </aside>
       </main>
+      <GeoNote />
     </div>
   );
 }

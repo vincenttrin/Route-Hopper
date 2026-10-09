@@ -101,10 +101,10 @@ func TestTraceResponseShape(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
+	// The LAN gateway and the silent hop are the source's network: they collapse into one hidden hop.
 	want := []hopJSON{
-		{HopNumber: 1, IP: "192.168.1.1", Hostname: "gateway.lan", RTT: 1.5},
-		{HopNumber: 2},
-		{HopNumber: 3, IP: "93.184.216.34", Hostname: "example.com", City: "Amsterdam", Country: "NL", Org: "Edgecast", Lat: 52.37, Lng: 4.9, RTT: 12},
+		{HopNumber: 1, Hidden: true},
+		{HopNumber: 2, IP: "93.184.216.34", Hostname: "example.com", City: "Amsterdam", Country: "NL", Org: "Edgecast", Lat: 52.37, Lng: 4.9, RTT: 12},
 	}
 	if len(got.Hops) != len(want) {
 		t.Fatalf("hops = %+v", got.Hops)
@@ -149,8 +149,9 @@ func TestTraceWarnsWhenNoRepliesBeyondFirstHop(t *testing.T) {
 				if !strings.Contains(got.Warning, "Docker Desktop") || !strings.Contains(got.Warning, "natively") {
 					t.Errorf("warning = %q", got.Warning)
 				}
-				if len(got.Hops) != len(tt.hops) {
-					t.Errorf("hops still returned: %d", len(got.Hops))
+				// Everything the client may see is the hidden start.
+				if len(got.Hops) != 1 || !got.Hops[0].Hidden {
+					t.Errorf("hops = %+v", got.Hops)
 				}
 			} else if got.Warning != "" || strings.Contains(rec.Body.String(), "warning") {
 				t.Errorf("unexpected warning in %s", rec.Body)
@@ -358,20 +359,20 @@ func TestTraceStreamEmitsStartHopsAndDone(t *testing.T) {
 		t.Errorf("tracer called with %v, %d", tracer.got, tracer.max)
 	}
 	events := decodeEvents(t, rec.Body.String())
-	if got := eventTypes(events); got != "start hop hop hop done" {
+	if got := eventTypes(events); got != "start hop hop done" {
 		t.Fatalf("events = %s", got)
 	}
 	if d := events[0].Destination; d == nil || d.IP != "93.184.216.34" || d.City != "Amsterdam" || d.Lat != 52.37 {
 		t.Errorf("start destination = %+v", d)
 	}
-	want := hopJSON{HopNumber: 3, IP: "93.184.216.34", Hostname: "example.com", City: "Amsterdam", Country: "NL", Org: "Edgecast", Lat: 52.37, Lng: 4.9, RTT: 12}
-	if *events[3].Hop != want {
-		t.Errorf("hop 3 = %+v, want %+v", *events[3].Hop, want)
+	if h := *events[1].Hop; h != (hopJSON{HopNumber: 1, Hidden: true}) {
+		t.Errorf("the source's network must arrive as one hidden hop: %+v", h)
 	}
-	if h := events[1].Hop; h.City != "" || h.Lat != 0 {
-		t.Errorf("private hop must not be located: %+v", h)
+	want := hopJSON{HopNumber: 2, IP: "93.184.216.34", Hostname: "example.com", City: "Amsterdam", Country: "NL", Org: "Edgecast", Lat: 52.37, Lng: 4.9, RTT: 12}
+	if *events[2].Hop != want {
+		t.Errorf("hop 2 = %+v, want %+v", *events[2].Hop, want)
 	}
-	done := events[4]
+	done := events[3]
 	if done.Reached == nil || !*done.Reached || done.Warning != "" || done.Destination.IP != "93.184.216.34" {
 		t.Errorf("done = %+v", done)
 	}
@@ -380,7 +381,7 @@ func TestTraceStreamEmitsStartHopsAndDone(t *testing.T) {
 func TestTraceStreamFlushesEachHopBeforeTheTraceEnds(t *testing.T) {
 	var linesWhileRunning []int
 	var api *API
-	tracer := &fakeTracer{hops: []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("96.34.20.4")}}}
+	tracer := &fakeTracer{hops: []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("96.34.20.4")}, {Number: 3, IP: addr("96.34.20.5")}}}
 	rec := httptest.NewRecorder()
 	tracer.after = func(i int) {
 		linesWhileRunning = append(linesWhileRunning, strings.Count(rec.Body.String(), "\n"))
@@ -388,8 +389,9 @@ func TestTraceStreamFlushesEachHopBeforeTheTraceEnds(t *testing.T) {
 	api = NewAPI(tracer, fakeResolver{}, geo.Nop{}, 1)
 	req := httptest.NewRequest(http.MethodPost, "/api/trace/stream", strings.NewReader(`{"endpoint":"8.8.8.8"}`))
 	api.TraceStream(rec, req)
-	// start + hop 1 are already written when hop 1 is reported; then hop 2 too.
-	if len(linesWhileRunning) != 2 || linesWhileRunning[0] != 2 || linesWhileRunning[1] != 3 {
+	// start + the hidden start are written when hop 1 is reported. Hop 2 is the ISP's first router,
+	// also hidden, so nothing new goes out until hop 3 leaves the source's network.
+	if len(linesWhileRunning) != 3 || linesWhileRunning[0] != 2 || linesWhileRunning[1] != 2 || linesWhileRunning[2] != 3 {
 		t.Errorf("lines visible after each hop = %v", linesWhileRunning)
 	}
 }
@@ -406,14 +408,14 @@ func TestTraceStreamForwardsICMPRetryEvents(t *testing.T) {
 	}
 	api := NewAPI(tracer, fakeResolver{}, geo.Nop{}, 1)
 	events := decodeEvents(t, postStream(api, `{"endpoint":"57.144.20.1"}`).Body.String())
-	if got := eventTypes(events); got != "start hop hop phase reset hop done" {
+	if got := eventTypes(events); got != "start hop phase reset hop done" {
 		t.Fatalf("events = %s", got)
 	}
-	if events[3].Phase != "icmp" {
-		t.Errorf("phase = %q", events[3].Phase)
+	if events[2].Phase != "icmp" {
+		t.Errorf("phase = %q", events[2].Phase)
 	}
-	if events[6].Reached == nil || *events[6].Reached {
-		t.Errorf("destination never replied: %+v", events[6])
+	if events[5].Reached == nil || *events[5].Reached {
+		t.Errorf("destination never replied: %+v", events[5])
 	}
 }
 
@@ -549,4 +551,40 @@ func TestTraceStreamStopsWhenWritesFail(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("handler kept tracing after a failed write")
 	}
+}
+
+type describedGeo struct {
+	fakeGeo
+	info geo.Info
+}
+
+func (d describedGeo) Info() geo.Info { return d.info }
+
+func TestHealthAndGeoInfo(t *testing.T) {
+	get := func(h http.HandlerFunc) (int, string) {
+		rec := httptest.NewRecorder()
+		h(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+		return rec.Code, strings.TrimSpace(rec.Body.String())
+	}
+	t.Run("without a database", func(t *testing.T) {
+		// Still healthy: the server runs, only without locations.
+		api := NewAPI(&fakeTracer{}, fakeResolver{}, geo.NewSwappable(geo.Nop{}), 1)
+		if code, body := get(api.Health); code != 200 || body != `{"geoip":"missing","status":"ok"}` {
+			t.Errorf("health = %d %s", code, body)
+		}
+		if code, body := get(api.GeoInfo); code != 200 || body != `{"available":false}` {
+			t.Errorf("geoip = %d %s", code, body)
+		}
+	})
+	t.Run("with a database", func(t *testing.T) {
+		g := describedGeo{info: geo.Info{Available: true, Provider: "DB-IP Lite", Updated: "2026-10-01"}}
+		api := NewAPI(&fakeTracer{}, fakeResolver{}, g, 1)
+		if code, body := get(api.Health); code != 200 || body != `{"geoip":"ready","status":"ok"}` {
+			t.Errorf("health = %d %s", code, body)
+		}
+		want := `{"available":true,"provider":"DB-IP Lite","updated":"2026-10-01"}`
+		if code, body := get(api.GeoInfo); code != 200 || body != want {
+			t.Errorf("geoip = %d %s", code, body)
+		}
+	})
 }

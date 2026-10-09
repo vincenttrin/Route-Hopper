@@ -72,3 +72,19 @@ export async function streamTrace(endpoint, maxHops = 30, signal, onUpdate) {
   }
   return state;
 }
+
+/**
+ * Which location database the backend has loaded, from GET /api/geoip:
+ * `{ available, provider, updated }` (`updated` is the build date, YYYY-MM-DD). Resolves with
+ * null when the backend cannot say (an older backend, or unreachable); the note is then left out.
+ */
+export async function getGeoInfo(signal) {
+  try {
+    const res = await fetch('/api/geoip', { signal });
+    if (!res.ok) return null;
+    const info = await res.json();
+    return typeof info?.available === 'boolean' ? info : null;
+  } catch {
+    return null;
+  }
+}

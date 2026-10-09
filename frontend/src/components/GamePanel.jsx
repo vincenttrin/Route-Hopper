@@ -1,3 +1,4 @@
+import ShareButton from './ShareButton.jsx';
 import { UNITS, formatDistance, missLabel, scoreMessage } from '../lib/game.js';
 
 const UNSCOREABLE = {
@@ -9,9 +10,9 @@ const UNSCOREABLE = {
  * The game's side of the screen. `status` is one of: ready (no round yet), running (the bunny is
  * hopping along the route), guessing (the route is revealed and the player guesses its distance),
  * scored, unscoreable (the route has no distance to guess) or incomplete (the round ended before the
- * trace finished, so nothing is scored).
+ * trace finished, so nothing is scored). `shareText` is the trip summary to offer for sharing, when the round has one.
  */
-export default function GamePanel({ status, unit, guess, guessError, guessRef, result, best, onGuess, onUnit, onSubmitGuess, onPlayAgain }) {
+export default function GamePanel({ status, unit, guess, guessError, guessRef, result, best, shareText, onGuess, onUnit, onSubmitGuess, onPlayAgain }) {
   const submit = (e) => {
     e.preventDefault();
     onSubmitGuess();
@@ -97,9 +98,12 @@ export default function GamePanel({ status, unit, guess, guessError, guessRef, r
         </p>
       )}
       {(status === 'scored' || status === 'unscoreable' || status === 'incomplete') && (
-        <button type="button" className="again" onClick={onPlayAgain}>
-          Play again
-        </button>
+        <div className="game-actions">
+          {shareText && <ShareButton text={shareText} />}
+          <button type="button" className="again" onClick={onPlayAgain}>
+            Play again
+          </button>
+        </div>
       )}
     </section>
   );
