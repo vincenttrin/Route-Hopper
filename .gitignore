@@ -3,3 +3,6 @@ backend/api
 backend/traffic-visualizer-api
 node_modules
 dist
+
+geoip/*
+!geoip/.gitkeep

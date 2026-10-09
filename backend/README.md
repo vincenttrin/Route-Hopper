@@ -40,16 +40,34 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
 
 ## Geolocation database
 
-Download GeoLite2 City (and optionally ASN, for the `org` field) from MaxMind
-(free account and license key required) and point the server at the files:
+From the repo root, fetch the free databases (no account or key needed):
 
 ```bash
-GEOIP_CITY_DB=/path/GeoLite2-City.mmdb GEOIP_ASN_DB=/path/GeoLite2-ASN.mmdb go run .
+scripts/fetch-geoip.sh           # writes ./geoip (or $GEOIP_DIR); --force refreshes
+```
+
+This downloads DB-IP Lite City and ASN (the ASN file supplies the `org` field) and
+saves them as `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb`, the names the Docker image
+and docker-compose expect. It is idempotent (existing files are kept unless `--force`)
+and exits non-zero with a message on any failure. DB-IP updates monthly, so re-run with
+`--force` to refresh. The files are git-ignored.
+
+To use MaxMind GeoLite2 instead, set a free license key:
+`MAXMIND_LICENSE_KEY=... scripts/fetch-geoip.sh --force`.
+
+Point a native server at the files:
+
+```bash
+GEOIP_CITY_DB=../geoip/GeoLite2-City.mmdb GEOIP_ASN_DB=../geoip/GeoLite2-ASN.mmdb go run .
 ```
 
 Defaults are `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb` in the working directory.
-Without a City database the server still runs, with every `lat`/`lng` at 0. DB-IP
-"City Lite" files also work for coordinates. In Docker, mount the files at `/data`.
+Without a City database the server still runs, with every `lat`/`lng` at 0. In Docker,
+compose mounts `./geoip` at `/data`.
+
+**Attribution:** the DB-IP Lite databases are licensed
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and require attribution. The
+map credits "IP geolocation by DB-IP"; keep that credit if you redistribute the app.
 
 ## Configuration
 
@@ -69,7 +87,7 @@ forwarded-header handling before exposing this directly.
 
 From the repo root, `docker compose up --build` serves the frontend on
 http://localhost:3000 (`PORT` to change it) and proxies `/api` to the backend, which is
-not published on the host. Put the GeoLite2 files in `./geoip` (or set `GEOIP_DIR`).
+not published on the host. Run `scripts/fetch-geoip.sh` first to populate `./geoip` (or set `GEOIP_DIR`).
 
 Docker Desktop on macOS and Windows runs containers behind a NAT that drops the
 "TTL exceeded" replies traceroute depends on, so traces from there show only the first

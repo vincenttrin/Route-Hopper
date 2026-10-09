@@ -4,7 +4,7 @@ services:
     environment:
       ALLOW_PRIVATE_TARGETS: ${ALLOW_PRIVATE_TARGETS:-false}
     volumes:
-      # Put GeoLite2-City.mmdb (and optionally GeoLite2-ASN.mmdb) here. See backend/README.md.
+      # Populated by scripts/fetch-geoip.sh. See backend/README.md.
       - ${GEOIP_DIR:-./geoip}:/data:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
