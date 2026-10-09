@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { bunnyMarkup } from './Bunny.jsx';
 import { HOP_MS } from '../lib/pace.js';
+import { arcPath, arcPoint } from '../lib/arc.js';
 
 const INK = '#2f2a35';
 const PAPER = '#fdf6ea';
@@ -43,7 +44,7 @@ export default function HopMap({ hops, destination, selected, onSelect }) {
   const layer = useRef(null);
   const markers = useRef(new Map());
   // The bunny rides on the newest located hop: its marker, the running glide, and how many hops it has seen.
-  const bunny = useRef({ marker: null, frame: 0, count: 0 });
+  const bunny = useRef({ marker: null, frame: 0, count: 0, last: null });
   const onSelectRef = useRef(onSelect);
 
   useEffect(() => {
@@ -78,7 +79,7 @@ export default function HopMap({ hops, destination, selected, onSelect }) {
     for (let i = 1; i < located.length; i++) {
       const a = located[i - 1];
       const b = located[i];
-      L.polyline([[a.lat, a.lng], [b.lat, b.lng]], { color: b.color, weight: 5, opacity: 0.95, lineCap: 'round' }).addTo(group);
+      L.polyline(arcPath(a, b), { color: b.color, weight: 5, opacity: 0.95, lineCap: 'round' }).addTo(group);
     }
     located.forEach((h) => {
       const style = h.destination
@@ -89,7 +90,9 @@ export default function HopMap({ hops, destination, selected, onSelect }) {
       m.on('click', () => onSelectRef.current(h.n));
       markers.current.set(h.n, m);
     });
+    // Fit the arcs too, not just the hops, so the bounce is never cut off at the edge of the map.
     const points = located.map((h) => [h.lat, h.lng]);
+    for (let i = 1; i < located.length; i++) points.push(...arcPath(located[i - 1], located[i], 6).map((p) => [p.lat, p.lng]));
     if (destination) {
       const to = [destination.lat, destination.lng];
       if (located.length) {
@@ -110,13 +113,16 @@ export default function HopMap({ hops, destination, selected, onSelect }) {
     const rider = bunny.current;
     const last = hops.findLast((h) => h.located);
     const wasCount = rider.count;
+    const wasLast = rider.last;
     rider.count = hops.length;
+    rider.last = last;
     if (!last) {
       cancelAnimationFrame(rider.frame);
       rider.marker?.remove();
       rider.marker = null;
       return;
     }
+    if (rider.marker && wasLast && hops.length === wasCount && wasLast.lat === last.lat && wasLast.lng === last.lng) return;
     const to = L.latLng(last.lat, last.lng);
     if (!rider.marker) {
       rider.marker = L.marker(to, { icon: BUNNY_ICON, interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(map.current);
@@ -138,8 +144,8 @@ export default function HopMap({ hops, destination, selected, onSelect }) {
     const t0 = performance.now();
     const step = (now) => {
       const t = Math.min(1, (now - t0) / HOP_MS);
-      const k = ease(t);
-      rider.marker.setLatLng([from.lat + (to.lat - from.lat) * k, from.lng + (to.lng - from.lng) * k]);
+      // The same arc the route line is drawn along, so the bunny bounces from hop to hop on it.
+      rider.marker.setLatLng(arcPoint(from, to, ease(t)));
       if (t < 1) rider.frame = requestAnimationFrame(step);
     };
     rider.frame = requestAnimationFrame(step);

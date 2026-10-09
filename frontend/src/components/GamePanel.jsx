@@ -1,32 +1,67 @@
-import { formatDistance, missLabel, scoreMessage } from '../lib/game.js';
+import { UNITS, formatDistance, missLabel, scoreMessage } from '../lib/game.js';
 
 const UNSCOREABLE = {
-  'few-hops': 'Fewer than two hops on this route could be placed on the map, so there is no distance to score. The bunny shrugs.',
-  'no-distance': 'The route stayed in one spot, so there is no distance to score. The bunny shrugs.',
+  'few-hops': 'Fewer than two hops on this route could be placed on the map, so there is no distance to guess. The bunny shrugs.',
+  'no-distance': 'The route stayed in one spot, so there is no distance to guess. The bunny shrugs.',
 };
 
 /**
- * The game's side of the screen. `status` is one of: ready (no round yet), running (guess locked in,
- * trace under way), scored, unscoreable (the route has no distance to compare with) or incomplete
- * (the round ended before the trace finished, so nothing is scored).
+ * The game's side of the screen. `status` is one of: ready (no round yet), running (the bunny is
+ * hopping along the route), guessing (the route is revealed and the player guesses its distance),
+ * scored, unscoreable (the route has no distance to guess) or incomplete (the round ended before the
+ * trace finished, so nothing is scored).
  */
-export default function GamePanel({ status, unit, round, result, best, onPlayAgain }) {
+export default function GamePanel({ status, unit, guess, guessError, guessRef, result, best, onGuess, onUnit, onSubmitGuess, onPlayAgain }) {
+  const submit = (e) => {
+    e.preventDefault();
+    onSubmitGuess();
+  };
   return (
     <section className={`game game-${status}`} aria-label="Distance guessing game" aria-live="polite">
       <h2>Guess the hop distance</h2>
       {status === 'ready' && (
         <p>
-          How far will the packet travel? Guess the total distance along its route, then press <b>Hop!</b> The bunny follows the trail
-          and scores your guess from 0 to 100.
+          Press <b>Hop!</b> and watch the bunny follow the packet's route. When it gets home, guess how far the packet travelled and
+          get a score from 0 to 100.
         </p>
       )}
-      {status === 'running' && (
-        <>
-          <p className="game-guess">
-            Your guess <b>{formatDistance(round.guessKm, unit)}</b>
-          </p>
-          <p>The bunny is on the trail. The real distance stays secret until it gets home.</p>
-        </>
+      {status === 'running' && <p>The bunny is on the trail. Watch the route; you guess the total distance when it gets home.</p>}
+      {status === 'guessing' && (
+        <form className="guess-form" onSubmit={submit} noValidate>
+          <p>The bunny is home! How far did the packet travel along the whole route?</p>
+          <div className={`field-guess${guessError ? ' is-invalid' : ''}`}>
+            <label htmlFor="guess" className="sr-only">
+              Your guess for the distance the packet travelled
+            </label>
+            <input
+              id="guess"
+              ref={guessRef}
+              value={guess}
+              onChange={(e) => onGuess(e.target.value)}
+              placeholder="Your guess"
+              inputMode="decimal"
+              autoComplete="off"
+              spellCheck="false"
+              aria-invalid={Boolean(guessError)}
+              aria-describedby={guessError ? 'guess-error' : undefined}
+            />
+            <div className="units" role="group" aria-label="Distance unit">
+              {Object.entries(UNITS).map(([key, u]) => (
+                <button key={key} type="button" aria-pressed={unit === key} aria-label={u.long} onClick={() => onUnit(key)}>
+                  {u.label}
+                </button>
+              ))}
+            </div>
+            <button type="submit" className="go">
+              Guess
+            </button>
+          </div>
+          {guessError && (
+            <p id="guess-error" className="form-error" role="alert">
+              {guessError}
+            </p>
+          )}
+        </form>
       )}
       {status === 'scored' && (
         <>

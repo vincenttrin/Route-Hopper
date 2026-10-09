@@ -1,4 +1,4 @@
-// The guessing game: parse a distance guess, score it against the traced route, and word the result.
+// The guessing game: once the bunny has shown the route, the player guesses its distance and the guess is scored.
 
 export const KM_PER_MILE = 1.609344;
 
@@ -65,14 +65,23 @@ export function scoreGuess(guessKm, actualKm) {
 }
 
 /**
- * Judges a finished round. `locatedCount` is how many hops had a location: the route needs two to
- * have a distance. Returns `{ status: 'scored', score, guessKm, actualKm }` or
- * `{ status: 'unscoreable', reason: 'few-hops' | 'no-distance' }`.
+ * Why a finished trace cannot be played, or null when it can. `locatedCount` is how many hops had a
+ * location: the route needs two to have a distance. A route that stayed in one spot has none either.
+ */
+export function unscoreableReason(actualKm, locatedCount) {
+  if (locatedCount < 2) return 'few-hops';
+  if (!Number.isFinite(actualKm) || actualKm < MIN_SCOREABLE_KM) return 'no-distance';
+  return null;
+}
+
+/**
+ * Judges a finished round once the player has guessed. Returns `{ status: 'scored', score, guessKm, actualKm }`
+ * or `{ status: 'unscoreable', reason: 'few-hops' | 'no-distance' }`.
  */
 export function judgeRound(guessKm, actualKm, locatedCount) {
-  if (locatedCount < 2) return { status: 'unscoreable', reason: 'few-hops' };
-  const score = scoreGuess(guessKm, actualKm);
-  if (score === null) return { status: 'unscoreable', reason: 'no-distance' };
+  const reason = unscoreableReason(actualKm, locatedCount);
+  const score = reason ? null : scoreGuess(guessKm, actualKm);
+  if (score === null) return { status: 'unscoreable', reason: reason ?? 'no-distance' };
   return { status: 'scored', score, guessKm, actualKm };
 }
 

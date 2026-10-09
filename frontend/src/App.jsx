@@ -7,8 +7,8 @@ import GamePanel from './components/GamePanel.jsx';
 import Bunny from './components/Bunny.jsx';
 import { normalizeTrace, summarize, LOCAL_COLOR } from './lib/trace.js';
 import { toRaw } from './lib/stream.js';
-import { usePacedReveal } from './lib/pace.js';
-import { parseGuess, judgeRound, fromKm, UNITS } from './lib/game.js';
+import { usePacedReveal, HOP_MS } from './lib/pace.js';
+import { parseGuess, judgeRound, unscoreableReason, fromKm, UNITS } from './lib/game.js';
 import { runTrace, streamTrace, StreamUnavailableError, StreamInterruptedError } from './services/api.js';
 import { SAMPLE_TRACE, SAMPLE_ENDPOINT } from './services/sample.js';
 
@@ -41,13 +41,18 @@ export default function App() {
   const [guess, setGuess] = useState('');
   const [unit, setUnit] = useState('km');
   const [guessError, setGuessError] = useState(null);
-  // The round being played: set when a trace starts with a valid guess, cleared by Play again or a trace that fails.
+  // The round being played: set when a trace starts (`guessKm` stays null until the player guesses once the route is shown),
+  // cleared by Play again or a trace that fails.
   const [round, setRound] = useState(null);
   const [best, setBest] = useState(null);
   const [shown, setShown] = usePacedReveal(raw.hops.length, SAMPLE_TRACE.hops.length);
+  // False from the first hop of a trace until the bunny has landed on the last one.
+  const [landed, setLanded] = useState(true);
   const abort = useRef(null);
   const previous = useRef(null);
+  const tracing = useRef(false);
   const guessRef = useRef(null);
+  const endpointRef = useRef(null);
 
   // The trace keeps hopping after the last hop is found, until every hop found has been shown.
   const hopping = busy || shown < raw.hops.length;
@@ -59,10 +64,29 @@ export default function App() {
   // Where the route was heading, when the destination never answered and has a known location.
   const unreached = !partial && !trace.reached && trace.destination?.located ? trace.destination : null;
 
-  // A round is scored once its trace has run to the end; one that was cancelled or cut off is never scored.
+  // A round is played once its trace has run to the end; one that was cancelled or cut off is never scored.
   const finished = Boolean(round) && !hopping && !cancelled && !error && !raw.partial;
-  const result = useMemo(() => (finished ? judgeRound(round.guessKm, stats.exactKm, stats.located) : null), [finished, round, stats]);
-  const status = !round ? 'ready' : hopping ? 'running' : result ? result.status : 'incomplete';
+  const result = useMemo(() => {
+    if (!finished) return null;
+    const reason = unscoreableReason(stats.exactKm, stats.located);
+    if (reason) return { status: 'unscoreable', reason };
+    return round.guessKm == null ? null : judgeRound(round.guessKm, stats.exactKm, stats.located);
+  }, [finished, round, stats]);
+  // `guessing` is a finished, playable route still waiting for the player's guess.
+  useEffect(() => {
+    if (hopping) {
+      setLanded(false);
+      return undefined;
+    }
+    // Let the last hop finish before the game moves on; with reduced motion there is no jump to wait for.
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const id = setTimeout(() => setLanded(true), still ? 0 : HOP_MS);
+    return () => clearTimeout(id);
+  }, [hopping]);
+  const status = !round ? 'ready' : hopping || (finished && !landed) ? 'running' : !finished ? 'incomplete' : (result?.status ?? 'guessing');
+  useEffect(() => {
+    if (status === 'guessing') guessRef.current?.focus();
+  }, [status]);
   useEffect(() => {
     if (result?.status === 'scored') setBest((b) => Math.max(b ?? 0, result.score));
   }, [result]);
@@ -78,31 +102,28 @@ export default function App() {
   };
 
   const submit = async (value) => {
-    const parsed = parseGuess(guess, unit);
-    if (!parsed.ok) {
-      setGuessError(parsed.error);
-      guessRef.current?.focus();
-      return;
-    }
     abort.current?.abort();
     const ctl = new AbortController();
     abort.current = ctl;
     const current = () => abort.current === ctl && !ctl.signal.aborted;
     previous.current = { raw, endpoint, isExample };
+    tracing.current = false;
     const startedAt = Date.now();
     let streamed = null;
     setBusy(true);
     setError(null);
+    setGuess('');
     setGuessError(null);
     setCancelled(false);
     setLive(null);
-    setRound({ guessKm: parsed.km });
+    setRound({ guessKm: null });
     try {
       try {
         await streamTrace(value, 30, ctl.signal, (state) => {
           if (!current()) return;
           // The first event means the server took the request: leave the previous trace behind.
           if (!streamed) {
+            tracing.current = true;
             setEndpoint(value);
             setExample(false);
             setSelected(null);
@@ -125,6 +146,7 @@ export default function App() {
         const data = await runTrace(value, 30, ctl.signal);
         if (!data.hops?.length) throw new Error('The trace returned no hops.');
         if (!current()) return;
+        tracing.current = true;
         setRaw(data);
         setShown(0);
         setLive({ startedAt, phase: null });
@@ -149,7 +171,7 @@ export default function App() {
   // Stops the trace right away: hops found but not yet shown are dropped, so it ends where the bunny is.
   const cancel = () => {
     abort.current?.abort();
-    if (shown === 0) {
+    if (!tracing.current || shown === 0) {
       restore();
       return;
     }
@@ -157,11 +179,22 @@ export default function App() {
     setCancelled(true);
   };
 
+  const submitGuess = () => {
+    const parsed = parseGuess(guess, unit);
+    if (!parsed.ok) {
+      setGuessError(parsed.error);
+      guessRef.current?.focus();
+      return;
+    }
+    setGuessError(null);
+    setRound({ guessKm: parsed.km });
+  };
+
   const playAgain = () => {
     setRound(null);
     setGuess('');
     setGuessError(null);
-    guessRef.current?.focus();
+    endpointRef.current?.focus();
   };
 
   const distance = Math.round(fromKm(stats.exactKm, unit)).toLocaleString('en-US');
@@ -180,21 +213,7 @@ export default function App() {
           <span>{routeTitle(trace.hops, endpoint)}</span>
           <b>{stats.hops} hops</b>
         </div>
-        <TraceInput
-          initial={endpoint}
-          busy={hopping}
-          guess={guess}
-          unit={unit}
-          guessError={guessError}
-          guessRef={guessRef}
-          onGuess={(v) => {
-            setGuess(v);
-            setGuessError(null);
-          }}
-          onUnit={setUnit}
-          onSubmit={submit}
-          onCancel={cancel}
-        />
+        <TraceInput initial={endpoint} busy={hopping} endpointRef={endpointRef} onSubmit={submit} onCancel={cancel} />
       </header>
       {error && (
         <div className="notice" role="alert">
@@ -218,21 +237,36 @@ export default function App() {
         </div>
       )}
       {isExample && !error && (
-        <div className="notice notice-info">Example trace. Enter an endpoint above, guess how far its packet travels, and press Hop! to send the bunny down your own route.</div>
+        <div className="notice notice-info">Example trace. Enter an endpoint above and press Hop! to send the bunny down your own route, then guess how far its packet travelled.</div>
       )}
       <main className={`main${busy && !live ? ' is-busy' : ''}`}>
         <section className="list" aria-label="Hops">
           <LineDiagram hops={trace.hops} live={hopping} selected={selected} onSelect={setSelected} />
         </section>
         <aside className="side">
-          <GamePanel status={status} unit={unit} round={round} result={result} best={best} onPlayAgain={playAgain} />
+          <GamePanel
+            status={status}
+            unit={unit}
+            guess={guess}
+            guessError={guessError}
+            guessRef={guessRef}
+            result={result}
+            best={best}
+            onGuess={(v) => {
+              setGuess(v);
+              setGuessError(null);
+            }}
+            onUnit={setUnit}
+            onSubmitGuess={submitGuess}
+            onPlayAgain={playAgain}
+          />
           <div className="map-panel">
             <h2>Hop map</h2>
             <HopMap hops={trace.hops} destination={unreached} selected={selected} onSelect={setSelected} />
           </div>
           <div className="stats">
             <div>
-              <b>{status === 'running' ? '?' : distance}</b>
+              <b>{status === 'running' || status === 'guessing' ? '?' : distance}</b>
               <span>{UNITS[unit].label} between located hops</span>
             </div>
             <div>
