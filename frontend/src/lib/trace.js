@@ -1,8 +1,9 @@
 const PRIVATE_IP = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|169\.254\.)/;
-const LOCAL = 'Local network';
+export const LOCAL = 'Local network';
 
-export const LOCAL_COLOR = '#6d7479';
-const PALETTE = ['#d83b2a', '#1769c2', '#1f9a4b', '#7b3fb0', '#e07a00', '#0f8b8d'];
+export const LOCAL_COLOR = '#7a6f6a';
+// Every colour reads at 4.5:1 or better under white chip text. Orange is left out: it marks the destination.
+const PALETTE = ['#b0306a', '#1f6fb5', '#277a4c', '#7a4fb5', '#0f7f82', '#8a5a2b'];
 
 function networkOf(hop) {
   if (!hop.ip) return null;
@@ -91,15 +92,23 @@ export function distanceKm(a, b) {
   return 6371 * 2 * Math.asin(Math.sqrt(s));
 }
 
-export function summarize(hops, networks) {
+/** Total great-circle distance, in km, along the route: hops without a location are skipped, the rest are joined in order. */
+export function routeDistanceKm(hops) {
   const located = hops.filter((h) => h.located);
   let km = 0;
   for (let i = 1; i < located.length; i++) km += distanceKm(located[i - 1], located[i]);
+  return km;
+}
+
+export function summarize(hops, networks) {
+  const km = routeDistanceKm(hops);
   const last = hops[hops.length - 1];
   return {
     hops: hops.reduce((n, h) => n + h.span, 0),
     networks: networks.filter((n) => n.name !== LOCAL).length,
     km: Math.round(km),
+    exactKm: km,
+    located: hops.filter((h) => h.located).length,
     // Only the destination's own reply is a latency to it.
     rtt: last?.destination ? last.rtt : null,
   };

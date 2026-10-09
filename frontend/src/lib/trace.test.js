@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeTrace, summarize, distanceKm } from './trace.js';
+import { normalizeTrace, summarize, distanceKm, routeDistanceKm } from './trace.js';
 import { SAMPLE_TRACE } from '../services/sample.js';
 
 describe('normalizeTrace', () => {
@@ -148,5 +148,50 @@ describe('normalizeTrace while the trace is running', () => {
     const t = normalizeTrace(full);
     expect(t.reached).toBe(false);
     expect(t.lastReply).toBe(2);
+  });
+});
+
+describe('routeDistanceKm', () => {
+  const geo = (hopNumber, ip, lat, lng) => ({ hopNumber, ip, hostname: '', lat, lng, rtt: 5 });
+  const route = (...hops) => normalizeTrace({ hops }).hops;
+  const london = [51.51, -0.13];
+  const paris = [48.86, 2.35];
+  const berlin = [52.52, 13.4];
+
+  it('adds up the legs between consecutive located hops', () => {
+    const hops = route(geo(1, '1.1.1.1', ...london), geo(2, '1.1.1.2', ...paris), geo(3, '1.1.1.3', ...berlin));
+    const [a, b, c] = hops;
+    expect(routeDistanceKm(hops)).toBeCloseTo(distanceKm(a, b) + distanceKm(b, c), 9);
+  });
+
+  it('skips hops without a location instead of breaking the route there', () => {
+    const withGaps = route(
+      geo(1, '192.168.1.1', 0, 0),
+      geo(2, '1.1.1.1', ...london),
+      { hopNumber: 3, ip: '' },
+      geo(4, '1.1.1.2', 0, 0),
+      geo(5, '1.1.1.3', ...paris),
+    );
+    const direct = route(geo(1, '1.1.1.1', ...london), geo(2, '1.1.1.3', ...paris));
+    expect(routeDistanceKm(withGaps)).toBeCloseTo(routeDistanceKm(direct), 9);
+    expect(routeDistanceKm(direct)).toBeGreaterThan(330);
+  });
+
+  it('is 0 with fewer than two located hops', () => {
+    expect(routeDistanceKm([])).toBe(0);
+    expect(routeDistanceKm(route(geo(1, '1.1.1.1', ...london)))).toBe(0);
+    expect(routeDistanceKm(route(geo(1, '192.168.1.1', 0, 0), geo(2, '1.1.1.1', ...london)))).toBe(0);
+  });
+
+  it('is 0 when every located hop shares one spot', () => {
+    expect(routeDistanceKm(route(geo(1, '1.1.1.1', ...london), geo(2, '1.1.1.2', ...london)))).toBe(0);
+  });
+
+  it('is what summarize reports, before rounding', () => {
+    const { hops, networks } = normalizeTrace(SAMPLE_TRACE);
+    const s = summarize(hops, networks);
+    expect(s.exactKm).toBe(routeDistanceKm(hops));
+    expect(s.km).toBe(Math.round(s.exactKm));
+    expect(s.located).toBe(hops.filter((h) => h.located).length);
   });
 });

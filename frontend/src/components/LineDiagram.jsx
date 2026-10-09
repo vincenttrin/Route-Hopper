@@ -1,10 +1,14 @@
-import { LOCAL_COLOR } from '../lib/trace.js';
+import { useEffect, useRef } from 'react';
+import { LOCAL, LOCAL_COLOR } from '../lib/trace.js';
+import { BunnyArt, CarrotArt } from './Bunny.jsx';
 
 const ROW = 58;
 const LANE_X = [22, 56];
 const MAX_RTT_BAR = 92;
+const BUNNY = 32;
 
 function Track({ hops }) {
+  const last = hops.length - 1;
   const y = (i) => i * ROW + ROW / 2;
   const x = (i) => LANE_X[hops[i].lane];
   const segments = [];
@@ -40,8 +44,10 @@ function Track({ hops }) {
         if (h.destination) {
           return (
             <g key={i}>
-              <circle cx={cx} cy={cy} r="11" className="st-dest" />
-              <circle cx={cx} cy={cy} r="5" className="st-dest-core" />
+              <circle cx={cx} cy={cy} r="13" className="st-dest" />
+              <g transform={`translate(${cx - 9} ${cy - 12}) scale(.75)`}>
+                <CarrotArt />
+              </g>
             </g>
           );
         }
@@ -55,14 +61,33 @@ function Track({ hops }) {
         }
         return <circle key={i} cx={cx} cy={cy} r="6.5" className="st st-plain" />;
       })}
+      {last >= 0 && (
+        // The bunny waits on the newest hop and glides to the next one. Its first position never glides, so a new trace does not drag it across the old one.
+        <g className={`bunny${last === 0 ? ' bunny-snap' : ''}`} style={{ transform: `translate(${x(last) - BUNNY / 2}px, ${y(last) - BUNNY - 11}px)` }}>
+          <g key={last} className="bunny-leap">
+            <g transform={`scale(${BUNNY / 48})`}>
+              <BunnyArt />
+            </g>
+          </g>
+        </g>
+      )}
     </svg>
   );
 }
 
+const NARROW = '(max-width: 899px)';
+
 export default function LineDiagram({ hops, live = false, selected, onSelect }) {
   const maxRtt = Math.max(1, ...hops.map((h) => h.rtt || 0));
+  const list = useRef(null);
+  // Follow the bunny down a long route. On a narrow screen the list sits below the map, so leave the page where it is.
+  useEffect(() => {
+    if (!live || window.matchMedia(NARROW).matches) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    list.current?.lastElementChild?.scrollIntoView?.({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' });
+  }, [live, hops.length]);
   return (
-    <ol className="line-list" style={{ '--row': `${ROW}px` }}>
+    <ol className={`line-list${live ? ' is-live' : ''}`} ref={list} style={{ '--row': `${ROW}px` }}>
       <Track hops={hops} />
       {hops.map((h) => {
         const pad = String(h.n).padStart(2, '0');
@@ -94,7 +119,7 @@ export default function LineDiagram({ hops, live = false, selected, onSelect }) 
                   ) : (
                     <span className="chip chip-unknown">Unknown</span>
                   )}
-                  {h.network && !h.located && <span className="chip chip-outline">Not located</span>}
+                  {h.network && h.network !== LOCAL && !h.located && <span className="chip chip-outline">Not located</span>}
                 </span>
                 <span className="meta">{meta}</span>
               </span>

@@ -1,10 +1,14 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import TraceInput from './components/TraceInput.jsx';
 import LineDiagram from './components/LineDiagram.jsx';
 import HopMap from './components/HopMap.jsx';
 import LiveStatus from './components/LiveStatus.jsx';
+import GamePanel from './components/GamePanel.jsx';
+import Bunny from './components/Bunny.jsx';
 import { normalizeTrace, summarize, LOCAL_COLOR } from './lib/trace.js';
 import { toRaw } from './lib/stream.js';
+import { usePacedReveal } from './lib/pace.js';
+import { parseGuess, judgeRound, fromKm, UNITS } from './lib/game.js';
 import { runTrace, streamTrace, StreamUnavailableError, StreamInterruptedError } from './services/api.js';
 import { SAMPLE_TRACE, SAMPLE_ENDPOINT } from './services/sample.js';
 
@@ -25,6 +29,7 @@ function unreachedMessage(endpoint, trace) {
 
 export default function App() {
   const [endpoint, setEndpoint] = useState(SAMPLE_ENDPOINT);
+  // Every hop found so far. Hops reach the screen later, at the pace set in lib/pace.js.
   const [raw, setRaw] = useState(SAMPLE_TRACE);
   const [isExample, setExample] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -33,25 +38,65 @@ export default function App() {
   // Set while hops are arriving: when the trace started and what it is doing besides probing.
   const [live, setLive] = useState(null);
   const [cancelled, setCancelled] = useState(false);
+  const [guess, setGuess] = useState('');
+  const [unit, setUnit] = useState('km');
+  const [guessError, setGuessError] = useState(null);
+  // The round being played: set when a trace starts with a valid guess, cleared by Play again or a trace that fails.
+  const [round, setRound] = useState(null);
+  const [best, setBest] = useState(null);
+  const [shown, setShown] = usePacedReveal(raw.hops.length, SAMPLE_TRACE.hops.length);
   const abort = useRef(null);
+  const previous = useRef(null);
+  const guessRef = useRef(null);
 
-  // A streamed trace stays partial until the stream finishes; it travels with `raw` so a restored trace keeps it.
-  const partial = Boolean(raw.partial);
-  const trace = useMemo(() => normalizeTrace(raw, { partial }), [raw, partial]);
+  // The trace keeps hopping after the last hop is found, until every hop found has been shown.
+  const hopping = busy || shown < raw.hops.length;
+  // A trace stays partial until its stream finishes and every hop is on screen; it travels with `raw` so a restored trace keeps it.
+  const partial = Boolean(raw.partial) || shown < raw.hops.length;
+  const view = useMemo(() => ({ ...raw, hops: raw.hops.slice(0, shown) }), [raw, shown]);
+  const trace = useMemo(() => normalizeTrace(view, { partial }), [view, partial]);
   const stats = useMemo(() => summarize(trace.hops, trace.networks), [trace]);
   // Where the route was heading, when the destination never answered and has a known location.
   const unreached = !partial && !trace.reached && trace.destination?.located ? trace.destination : null;
 
+  // A round is scored once its trace has run to the end; one that was cancelled or cut off is never scored.
+  const finished = Boolean(round) && !hopping && !cancelled && !error && !raw.partial;
+  const result = useMemo(() => (finished ? judgeRound(round.guessKm, stats.exactKm, stats.located) : null), [finished, round, stats]);
+  const status = !round ? 'ready' : hopping ? 'running' : result ? result.status : 'incomplete';
+  useEffect(() => {
+    if (result?.status === 'scored') setBest((b) => Math.max(b ?? 0, result.score));
+  }, [result]);
+
+  const restore = () => {
+    const p = previous.current;
+    setRaw(p.raw);
+    setShown(p.raw.hops.length);
+    setEndpoint(p.endpoint);
+    setExample(p.isExample);
+    setSelected(null);
+    setRound(null);
+  };
+
   const submit = async (value) => {
+    const parsed = parseGuess(guess, unit);
+    if (!parsed.ok) {
+      setGuessError(parsed.error);
+      guessRef.current?.focus();
+      return;
+    }
     abort.current?.abort();
     const ctl = new AbortController();
     abort.current = ctl;
-    const current = () => abort.current === ctl;
-    const previous = { raw, endpoint, isExample };
+    const current = () => abort.current === ctl && !ctl.signal.aborted;
+    previous.current = { raw, endpoint, isExample };
+    const startedAt = Date.now();
     let streamed = null;
     setBusy(true);
     setError(null);
+    setGuessError(null);
     setCancelled(false);
+    setLive(null);
+    setRound({ guessKm: parsed.km });
     try {
       try {
         await streamTrace(value, 30, ctl.signal, (state) => {
@@ -61,10 +106,13 @@ export default function App() {
             setEndpoint(value);
             setExample(false);
             setSelected(null);
-            setLive({ startedAt: Date.now(), phase: null });
+            setShown(0);
+            setLive({ startedAt, phase: null });
           }
           streamed = state;
           setRaw({ ...toRaw(state), partial: true });
+          // A reset drops the hops found so far; the ones already shown go with them.
+          setShown((n) => Math.min(n, state.hops.length));
           setLive((l) => (l && l.phase !== state.phase ? { ...l, phase: state.phase } : l));
         });
         if (!streamed.hops.length) throw new Error('The trace returned no hops.');
@@ -74,59 +122,89 @@ export default function App() {
         if (!(e instanceof StreamUnavailableError) && !lostBeforeAnyHop) throw e;
         // Streaming does not work here (an old backend, a proxy in the way): trace in one piece instead.
         streamed = null;
-        setLive(null);
         const data = await runTrace(value, 30, ctl.signal);
         if (!data.hops?.length) throw new Error('The trace returned no hops.');
         if (!current()) return;
         setRaw(data);
+        setShown(0);
+        setLive({ startedAt, phase: null });
         setEndpoint(value);
         setExample(false);
         setSelected(null);
       }
     } catch (e) {
       if (!current()) return;
-      if (e.name === 'AbortError') {
-        setCancelled(Boolean(streamed?.hops.length));
-      } else if (e instanceof StreamInterruptedError) {
+      if (e instanceof StreamInterruptedError) {
         setError(`The connection to the trace service was lost after ${streamed.hops.length} hops. The route so far is shown.`);
       } else {
         setError(e.message || 'Could not reach the trace service.');
       }
       // A trace that never produced a hop leaves the previous one on screen.
-      if (!streamed?.hops.length) {
-        setRaw(previous.raw);
-        setEndpoint(previous.endpoint);
-        setExample(previous.isExample);
-        setSelected(null);
-      }
+      if (!streamed?.hops.length) restore();
     } finally {
-      if (current()) {
-        setBusy(false);
-        setLive(null);
-      }
+      if (abort.current === ctl) setBusy(false);
     }
   };
 
-  const cancel = () => abort.current?.abort();
+  // Stops the trace right away: hops found but not yet shown are dropped, so it ends where the bunny is.
+  const cancel = () => {
+    abort.current?.abort();
+    if (shown === 0) {
+      restore();
+      return;
+    }
+    setRaw((r) => ({ ...r, hops: r.hops.slice(0, shown), partial: true }));
+    setCancelled(true);
+  };
+
+  const playAgain = () => {
+    setRound(null);
+    setGuess('');
+    setGuessError(null);
+    guessRef.current?.focus();
+  };
+
+  const distance = Math.round(fromKm(stats.exactKm, unit)).toLocaleString('en-US');
 
   return (
     <div className="app">
       <header className="bar">
+        <div className="brand">
+          <Bunny size={44} className="brand-bunny" />
+          <div className="brand-text">
+            <span className="brand-name">Route Hopper</span>
+            <span className="brand-tag">Follow the bunny along the packet's path</span>
+          </div>
+        </div>
         <div className="route">
           <span>{routeTitle(trace.hops, endpoint)}</span>
           <b>{stats.hops} hops</b>
         </div>
-        <TraceInput initial={endpoint} busy={busy} onSubmit={submit} onCancel={cancel} />
+        <TraceInput
+          initial={endpoint}
+          busy={hopping}
+          guess={guess}
+          unit={unit}
+          guessError={guessError}
+          guessRef={guessRef}
+          onGuess={(v) => {
+            setGuess(v);
+            setGuessError(null);
+          }}
+          onUnit={setUnit}
+          onSubmit={submit}
+          onCancel={cancel}
+        />
       </header>
       {error && (
         <div className="notice" role="alert">
           {error}
         </div>
       )}
-      {live && <LiveStatus startedAt={live.startedAt} hops={trace.hops} phase={live.phase} />}
+      {hopping && live && <LiveStatus startedAt={live.startedAt} found={raw.hops.length} shown={shown} probing={busy} phase={live.phase} />}
       {cancelled && !error && (
         <div className="notice notice-info" role="status">
-          Trace cancelled after {stats.hops} hops. The route so far is shown.
+          Trace cancelled after {stats.hops} hops. The bunny stopped where it was, and this round is not scored.
         </div>
       )}
       {!isExample && !error && raw.warning && (
@@ -140,21 +218,22 @@ export default function App() {
         </div>
       )}
       {isExample && !error && (
-        <div className="notice notice-info">Example trace. Enter an endpoint above to trace your own route.</div>
+        <div className="notice notice-info">Example trace. Enter an endpoint above, guess how far its packet travels, and press Hop! to send the bunny down your own route.</div>
       )}
-      <main className={`main${busy ? ' is-busy' : ''}`}>
+      <main className={`main${busy && !live ? ' is-busy' : ''}`}>
         <section className="list" aria-label="Hops">
-          <LineDiagram hops={trace.hops} live={Boolean(live)} selected={selected} onSelect={setSelected} />
+          <LineDiagram hops={trace.hops} live={hopping} selected={selected} onSelect={setSelected} />
         </section>
         <aside className="side">
+          <GamePanel status={status} unit={unit} round={round} result={result} best={best} onPlayAgain={playAgain} />
           <div className="map-panel">
-            <h2>Geography</h2>
+            <h2>Hop map</h2>
             <HopMap hops={trace.hops} destination={unreached} selected={selected} onSelect={setSelected} />
           </div>
           <div className="stats">
             <div>
-              <b>{stats.km.toLocaleString('en-US')}</b>
-              <span>km between located hops</span>
+              <b>{status === 'running' ? '?' : distance}</b>
+              <span>{UNITS[unit].label} between located hops</span>
             </div>
             <div>
               <b>{stats.rtt != null ? stats.rtt.toFixed(1) : '-'}</b>
