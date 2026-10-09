@@ -28,7 +28,7 @@ export default function HopMap({ hops, selected, onSelect }) {
     map.current = L.map(el.current, { zoomControl: true, attributionControl: true, worldCopyJump: true }).setView([30, -20], 2);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 18,
-      attribution: '&copy; OpenStreetMap contributors',
+      attribution: '&copy; OpenStreetMap contributors | IP geolocation by <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">DB-IP</a>',
       className: 'tiles-muted',
     }).addTo(map.current);
     layer.current = L.layerGroup().addTo(map.current);
