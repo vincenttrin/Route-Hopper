@@ -1,10 +1,52 @@
-# traffic-visualizer
+# Route Hopper (traffic-visualizer)
 
-Enter a host name, IP, or URL and the app runs a traceroute to it, looks up each hop's
-location and network, and draws the route as a line diagram next to a map. The first
+Enter a host name, IP, or URL and a bunny follows the route a packet takes to it. The
+app runs a traceroute, looks up each hop's location and network, and draws the route as
+a line diagram next to a map, with the bunny hopping from hop to hop on both. The first
 load shows an example trace (Omaha to Amsterdam) so you can see the layout before
-tracing anything. Hops appear on the diagram and map one at a time as they are
-discovered, and a trace in progress can be cancelled.
+tracing anything.
+
+Hops are discovered one at a time and shown at a steady pace: at least 1.2 seconds
+apart, however fast the backend finds them, so the hopping is easy to watch. The pace is
+a frontend queue (`PACE_MS` in `frontend/src/lib/pace.js`); the real traceroute is not
+slowed down. A trace in progress can be cancelled at any moment, and it stops where the
+bunny is. With `prefers-reduced-motion` set, the bunny moves without the jump animation
+and rows appear without sliding in; the pace stays the same.
+
+## The game
+
+Guess how far the packet travels before the bunny gets there.
+
+1. Type a guess in the box next to the endpoint, in km or miles (the toggle beside it),
+   and press **Hop!**. A guess is required: empty, non-numeric, zero, or absurdly large
+   (over 500,000 km) guesses are rejected with a message.
+2. The guess is locked while the bunny hops, and the real distance stays hidden (the
+   distance stat shows `?`).
+3. When the trace finishes, the result panel shows your guess, the actual distance, and a
+   score from 0 to 100, with a message from the bunny. **Play again** clears the round.
+   The best score of the session is kept in the page (nothing is stored on the server).
+
+The **actual distance** is the sum of the great-circle distances between consecutive hops
+that have a location, in order. Hops without a location (private addresses, no reply, no
+database entry) are skipped.
+
+The **score** depends on the relative error `e = |guess - actual| / actual`:
+
+```
+score = round(100 * (1 - e) ^ 2)     for e < 1
+score = 0                            for e >= 1
+```
+
+An exact guess scores 100, 5% off scores 90, 10% off 81, 25% off 56, 50% off 25, and a
+guess off by the whole distance or more (such as double the actual distance) scores 0.
+Over- and undershooting by the same distance score the same. The functions are in
+`frontend/src/lib/game.js` with tests.
+
+A round is not scored, and says why, when:
+
+- fewer than two hops have a location, or the located hops are all in the same spot
+  (under 1 km of route), since there is no distance to compare with;
+- the trace is cancelled, or the connection to the backend is lost before it finishes.
 
 - **Frontend:** React, Leaflet (OpenStreetMap tiles), Vite
 - **Backend:** Go REST API that shells out to the system `traceroute`

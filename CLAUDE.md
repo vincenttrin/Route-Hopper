@@ -150,9 +150,9 @@ docker-compose down
 
 ### Frontend Visualization
 - **Line Diagram (Main View):** Transit-map style rendering with hops as stations stacked top-to-bottom. Lanes alternate when the packet switches networks. Hop cards show IP, hostname, city, RTT; click to select and highlight on the map.
-- **Geography Map (Side Panel):** Leaflet map with OpenStreetMap tiles showing only located hops. Polylines connect hops, color-coded by network. Destination marked with a yellow dot. Map pans and zooms to selected hop.
+- **Geography Map (Side Panel):** Leaflet map with OpenStreetMap tiles showing only located hops. Polylines connect hops, color-coded by network. Destination marked with an orange dot. Map pans and zooms to selected hop.
 - **Network Legend:** Lists all networks crossed, with color swatches. Private IPs shown as "Local network" (grey).
-- **Stats:** Distance between located hops (km), latency to destination (RTT of the final hop if the destination replied, else "-"), count of networks crossed.
+- **Stats:** Distance between located hops (km or miles, shown as "?" while a game round is running), latency to destination (RTT of the final hop if the destination replied, else "-"), count of networks crossed.
 - **Example Trace:** First load shows a sample trace across ISP networks from Omaha to Amsterdam, providing clear orientation before the user enters their own endpoint.
 
 ### Hop Processing (Frontend)

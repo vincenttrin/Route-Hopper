@@ -1,9 +1,24 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
+import { bunnyMarkup } from './Bunny.jsx';
+import { HOP_MS } from '../lib/pace.js';
 
-const INK = '#15181a';
-const PAPER = '#f3f4f2';
-const DEST = '#f4b400';
+const INK = '#2f2a35';
+const PAPER = '#fdf6ea';
+const DEST = '#f28a1f';
+const SELECTED = '#d6336c';
+
+const BUNNY_SIZE = 44;
+// Static markup built from our own artwork, never from trace data.
+const BUNNY_ICON = L.divIcon({
+  className: 'bunny-marker',
+  html: `<div class="bunny-map">${bunnyMarkup(BUNNY_SIZE)}</div>`,
+  iconSize: [BUNNY_SIZE, BUNNY_SIZE],
+  iconAnchor: [BUNNY_SIZE / 2, BUNNY_SIZE + 6],
+});
+
+const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 
 function tooltipFor(h) {
   const root = document.createElement('div');
@@ -27,6 +42,8 @@ export default function HopMap({ hops, destination, selected, onSelect }) {
   const map = useRef(null);
   const layer = useRef(null);
   const markers = useRef(new Map());
+  // The bunny rides on the newest located hop: its marker, the running glide, and how many hops it has seen.
+  const bunny = useRef({ marker: null, frame: 0, count: 0 });
   const onSelectRef = useRef(onSelect);
 
   useEffect(() => {
@@ -43,8 +60,11 @@ export default function HopMap({ hops, destination, selected, onSelect }) {
     layer.current = L.layerGroup().addTo(map.current);
     const resize = new ResizeObserver(() => map.current?.invalidateSize());
     resize.observe(el.current);
+    const rider = bunny.current;
     return () => {
       resize.disconnect();
+      cancelAnimationFrame(rider.frame);
+      rider.marker = null;
       map.current.remove();
       map.current = null;
     };
@@ -87,9 +107,48 @@ export default function HopMap({ hops, destination, selected, onSelect }) {
   }, [hops, destination]);
 
   useEffect(() => {
+    const rider = bunny.current;
+    const last = hops.findLast((h) => h.located);
+    const wasCount = rider.count;
+    rider.count = hops.length;
+    if (!last) {
+      cancelAnimationFrame(rider.frame);
+      rider.marker?.remove();
+      rider.marker = null;
+      return;
+    }
+    const to = L.latLng(last.lat, last.lng);
+    if (!rider.marker) {
+      rider.marker = L.marker(to, { icon: BUNNY_ICON, interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(map.current);
+      return;
+    }
+    cancelAnimationFrame(rider.frame);
+    const from = rider.marker.getLatLng();
+    // Only the next hop of the same trace is a hop; anything else (a new trace, an old one restored) is a jump.
+    if (hops.length !== wasCount + 1 || from.equals(to) || prefersReducedMotion()) {
+      rider.marker.setLatLng(to);
+      return;
+    }
+    const sprite = rider.marker.getElement()?.firstElementChild;
+    if (sprite) {
+      sprite.classList.remove('is-leaping');
+      void sprite.offsetWidth;
+      sprite.classList.add('is-leaping');
+    }
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / HOP_MS);
+      const k = ease(t);
+      rider.marker.setLatLng([from.lat + (to.lat - from.lat) * k, from.lng + (to.lng - from.lng) * k]);
+      if (t < 1) rider.frame = requestAnimationFrame(step);
+    };
+    rider.frame = requestAnimationFrame(step);
+  }, [hops]);
+
+  useEffect(() => {
     markers.current.forEach((m, n) => {
       const on = n === selected;
-      m.setStyle({ weight: on ? 5 : 3, color: on ? '#d83b2a' : INK });
+      m.setStyle({ weight: on ? 5 : 3, color: on ? SELECTED : INK });
       if (on) {
         m.bringToFront();
         map.current.panTo(m.getLatLng());
