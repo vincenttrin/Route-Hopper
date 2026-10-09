@@ -33,7 +33,7 @@ func main() {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      tracer.Timeout + 15*time.Second,
+		WriteTimeout:      tracer.Timeout + tracer.ICMPTimeout + 15*time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
@@ -41,7 +41,7 @@ func main() {
 	defer stop()
 	go func() {
 		<-ctx.Done()
-		shutdown, cancel := context.WithTimeout(context.Background(), tracer.Timeout+20*time.Second)
+		shutdown, cancel := context.WithTimeout(context.Background(), tracer.Timeout+tracer.ICMPTimeout+20*time.Second)
 		defer cancel()
 		srv.Shutdown(shutdown)
 	}()

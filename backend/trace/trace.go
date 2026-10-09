@@ -29,7 +29,8 @@ type Runner func(ctx context.Context, name string, args ...string) ([]byte, erro
 type Tracer struct {
 	Run          Runner
 	LookupAddr   func(ctx context.Context, ip string) ([]string, error)
-	Timeout      time.Duration // overall limit for one trace
+	Timeout      time.Duration // limit for the UDP pass
+	ICMPTimeout  time.Duration // separate limit for the ICMP fallback pass
 	DNSTimeout   time.Duration // limit for each reverse lookup
 	ProbesPerHop int
 	WaitSeconds  int
@@ -80,11 +81,13 @@ func (t *Tracer) Trace(ctx context.Context, ip netip.Addr, maxHops int) ([]Hop, 
 		}
 		return nil, fmt.Errorf("%s failed: %w", binFor(ip), err)
 	}
-	// The ICMP pass shares the time limit, and is skipped when the UDP pass
-	// used it all. It only replaces the UDP hops if it got further: ICMP echo
+	// The ICMP pass has its own time limit so a long silent UDP tail cannot
+	// starve it. It only replaces the UDP hops if it got further: ICMP echo
 	// needs CAP_NET_RAW on Linux, and some hosts ignore it as well.
-	if !Reached(hops, ip) && runCtx.Err() == nil {
-		if icmp, _ := t.probe(runCtx, ip, maxHops, true); Reached(icmp, ip) {
+	if !Reached(hops, ip) && ctx.Err() == nil {
+		icmpCtx, icmpCancel := context.WithTimeout(ctx, t.ICMPTimeout)
+		defer icmpCancel()
+		if icmp, _ := t.probe(icmpCtx, ip, maxHops, true); Reached(icmp, ip) {
 			hops = icmp
 		}
 	}

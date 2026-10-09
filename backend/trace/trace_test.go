@@ -20,6 +20,7 @@ func newTestTracer(run Runner) *Tracer {
 			return nil, errors.New("nxdomain")
 		},
 		Timeout:      time.Second,
+		ICMPTimeout:  time.Second,
 		DNSTimeout:   time.Second,
 		ProbesPerHop: 2,
 		WaitSeconds:  1,
@@ -136,6 +137,25 @@ func TestTraceFallsBackToICMPWhenDestinationIgnoresUDP(t *testing.T) {
 		t.Errorf("calls = %v", calls)
 	}
 	if !Reached(hops, dest) || len(hops) != 4 {
+		t.Errorf("hops = %+v", hops)
+	}
+}
+
+func TestTraceICMPPassRunsAfterUDPUsesWholeBudget(t *testing.T) {
+	tr := newTestTracer(func(ctx context.Context, _ string, args ...string) ([]byte, error) {
+		if args[0] == "-I" {
+			return []byte(facebookICMP), nil
+		}
+		<-ctx.Done()
+		return []byte(facebookUDP), ctx.Err()
+	})
+	tr.Timeout = 20 * time.Millisecond
+	dest := netip.MustParseAddr("57.144.20.1")
+	hops, err := tr.Trace(context.Background(), dest, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !Reached(hops, dest) {
 		t.Errorf("hops = %+v", hops)
 	}
 }

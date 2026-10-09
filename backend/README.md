@@ -61,7 +61,7 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
 - A hop that never answered has an empty `ip`; a hop without geolocation (private
   addresses, unknown ranges) has `lat` and `lng` of 0.
 - `rtt` is the mean of the answered probes in milliseconds.
-- If the 60 second limit is hit, the hops collected so far are returned.
+- The UDP pass is limited to 60 seconds and the ICMP fallback pass gets its own 15 seconds, so a trace takes at most about 75 seconds. If a limit is hit, the hops collected so far are returned.
 - Errors are plain text: 400 invalid input, 403 non-public target, 422 unresolvable
   host, 429 rate limited, 503 too many concurrent traces, 504 nothing traced in time.
 
