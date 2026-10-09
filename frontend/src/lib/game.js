@@ -5,13 +5,6 @@ export const KM_PER_MILE = 1.609344;
 /** A guess further than this many km is rejected as a typo; a route would have to circle the Earth over a dozen times. */
 export const MAX_GUESS_KM = 500000;
 
-/**
- * Relative error at which the score reaches 0: a guess that is off by this share of the actual
- * distance (or more) scores nothing. 1 means "off by the whole distance", so guessing 0 or double
- * the actual distance scores 0.
- */
-export const ZERO_SCORE_ERROR = 1;
-
 /** A guess within this many km of the actual distance (over or under) scores a full 100, whatever unit it was typed in. */
 export const TOLERANCE_KM = 10;
 
@@ -49,23 +42,21 @@ export function parseGuess(text, unit = 'km') {
 }
 
 /**
- * Scores a guess from 0 to 100. A guess within TOLERANCE_KM of the actual distance scores 100.
- * Beyond that, the relative error is measured past the tolerance, `e = (|guess - actual| - TOLERANCE_KM) / actual`:
+ * Scores a guess from 0 to 100 by how close it is in proportion to the actual distance. A guess within
+ * TOLERANCE_KM of the actual distance scores 100. Otherwise:
  *
- *   score = 100 * (1 - e / ZERO_SCORE_ERROR) ^ 2, rounded, and 0 once e reaches ZERO_SCORE_ERROR
+ *   score = round(100 * min(guess, actual) / max(guess, actual))
  *
- * The score is continuous at the tolerance edge and gentlest at first: 5% off (past the tolerance)
- * is 90, 10% off is 81, 25% off is 56, 50% off is 25, and 100% off or more is 0. It is never
- * negative. Over- and under-shooting by the same distance score the same. Both distances are in km.
+ * So 10000 km against an actual 13146 km scores 76, and 13146 km against an actual 10000 km scores 76 too:
+ * over- and under-shooting are treated symmetrically. The score stays within 0 to 100. Both distances are in km.
  * Returns null when the inputs cannot be scored: a guess that is not a positive number, or a
- * route that went nowhere (see MIN_SCOREABLE_KM).
+ * route that went nowhere (see MIN_SCOREABLE_KM), so the ratio never divides by zero.
  */
 export function scoreGuess(guessKm, actualKm) {
   if (!Number.isFinite(guessKm) || guessKm <= 0) return null;
   if (!Number.isFinite(actualKm) || actualKm < MIN_SCOREABLE_KM) return null;
-  const error = Math.max(0, Math.abs(guessKm - actualKm) - TOLERANCE_KM) / actualKm;
-  if (error >= ZERO_SCORE_ERROR) return 0;
-  return Math.max(0, Math.round(100 * (1 - error / ZERO_SCORE_ERROR) ** 2));
+  if (Math.abs(guessKm - actualKm) <= TOLERANCE_KM) return 100;
+  return Math.round((100 * Math.min(guessKm, actualKm)) / Math.max(guessKm, actualKm));
 }
 
 /**
