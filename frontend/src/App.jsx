@@ -86,7 +86,7 @@ export default function App() {
           <LineDiagram hops={trace.hops} selected={selected} onSelect={setSelected} />
         </section>
         <aside className="side">
-          <div>
+          <div className="map-panel">
             <h2>Geography</h2>
             <HopMap hops={trace.hops} destination={unreached} selected={selected} onSelect={setSelected} />
           </div>
