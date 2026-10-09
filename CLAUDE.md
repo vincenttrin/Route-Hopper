@@ -39,15 +39,16 @@ traffic-visualizer/
 │   ├── package.json
 │   ├── vite.config.js
 │   └── index.html
-├── backend/               # Go API server (not in this change)
+├── backend/               # Go API server
 │   ├── main.go
 │   ├── handlers/          # HTTP route handlers
-│   ├── trace/             # Packet tracing logic (traceroute/mtr execution)
+│   ├── trace/             # Packet tracing logic (traceroute execution)
 │   ├── geo/               # IP geolocation logic
+│   ├── README.md          # Backend documentation
 │   ├── Dockerfile
 │   ├── go.mod
 │   └── go.sum
-├── docker-compose.yml     # Local dev orchestration (not in this change)
+├── docker-compose.yml     # Local dev orchestration
 ├── CLAUDE.md              # This file
 └── README.md              # User-facing documentation
 ```
@@ -55,8 +56,9 @@ traffic-visualizer/
 ### Backend API Endpoints
 - `POST /api/trace` - Start packet tracing
   - Request: `{ "endpoint": "example.com", "maxHops": 30 }`
-  - Response: `{ "hops": [ { "hopNumber": 1, "ip": "1.2.3.4", "hostname": "...", "city": "...", "lat": 40.7, "lng": -74.0, "rtt": 1.23, "org": "..." }, ... ], "destination": { "ip": "...", "lat": ..., "lng": ... } }`
-  - `city` and `org` are optional; `org` can be used to override network name derivation
+  - Response: `{ "hops": [ { "hopNumber": 1, "ip": "1.2.3.4", "hostname": "...", "city": "...", "country": "...", "lat": 40.7, "lng": -74.0, "rtt": 1.23, "org": "..." }, ... ], "destination": { "ip": "...", "city": "...", "lat": ..., "lng": ... } }`
+  - `city`, `country`, and `org` are optional and only present for publicly routable IPs with geolocation data
+  - See backend/README.md for full API documentation, error codes, and configuration
 
 ## Development Setup
 
@@ -135,16 +137,16 @@ docker-compose down
 ## Key Implementation Details
 
 ### Packet Tracing (Backend)
-- Execute `traceroute -m <maxHops>` or `mtr --report` as subprocess
-- Parse output to extract hop information (IP, hostname, RTT)
-- Handle different traceroute output formats (Linux vs macOS)
-- Gracefully handle cases where hops are unreachable or blocked
+- Execute `traceroute` (or `traceroute6` for IPv6) with flags: `-n` (no DNS during trace), `-q 2` (2 probes per hop), `-w 1` (1 second timeout), `-m <maxHops>`
+- Parse output to extract hop information (IP, hostname, RTT); handles both Linux and macOS formats
+- Enrich hops with concurrent reverse DNS lookups (separate from traceroute, with 2s timeout per lookup)
+- Return partial results if 60 second overall limit is hit; gracefully handle unreachable hops (empty IP, zero coordinates)
 
 ### Geolocation (Backend)
-- Use MaxMind GeoIP2 Lite free database (or IP2Location)
-- Load geolocation database on server startup
-- Cache IP -> geo lookups in memory (optional)
-- Return lat/lng for each hop's IP address
+- Load MaxMind GeoIP2 City and ASN .mmdb files at startup (optional; DB-IP "City Lite" also compatible)
+- Server runs without databases, returning lat/lng of 0 for all IPs
+- Lookup coordinates and ASN (for `org` field) for each hop's public IP
+- Private addresses (RFC 1918, loopback, link-local) return lat/lng of 0 regardless of database
 
 ### Frontend Visualization
 - **Line Diagram (Main View):** Transit-map style rendering with hops as stations stacked top-to-bottom. Lanes alternate when the packet switches networks. Hop cards show IP, hostname, city, RTT; click to select and highlight on the map.
@@ -168,10 +170,10 @@ docker-compose down
 
 ## Testing
 
-- Backend: unit tests for trace parsing, geolocation lookups (not in this change)
+- Backend: unit tests for trace parsing (macOS and Linux formats), endpoint validation, resolver, rate limiting, handler with fakes (backend/*_test.go)
 - Frontend: unit tests for trace normalization, network derivation, distance calculation, destination RTT logic (src/lib/trace.test.js)
-- Integration: test full trace flow end-to-end with known destinations
-- No E2E tests initially (hard to trace real packets reliably); live validation deferred (backend not yet available)
+- Integration: E2E test run against real traceroute and GeoIP database (manual validation)
+- No automated E2E tests yet (hard to trace real packets reliably); live validation requires real traceroute and network access
 
 ## Deployment
 
@@ -183,6 +185,6 @@ docker-compose down
 ## Notes
 
 - **Frontend:** Light theme only (deliberately); Vite dev proxy intercepts `/api/*` and forwards to backend; example trace shown on first load; built with React 18, Leaflet 1.9, Vite 5; nginx.conf in container proxies `/api/` to backend service.
-- **Backend:** Keep stateless for horizontal scaling; traceroute requires elevated permissions in some environments (CAP_NET_RAW in containers); geolocation accuracy depends on database quality (GeoLite2 is ~95% city-level accurate); consider rate limiting on tracing endpoint (traceroute can be resource-intensive).
+- **Backend:** Stateless by design for horizontal scaling. Rate limiting per remote address (default 20/min, burst 5); MAX_CONCURRENT_TRACES cap (default 4) returns 503 if saturated; both keyed on connection source (behind proxy, limits the proxy). Non-public targets (RFC 1918, loopback, link-local) rejected with 403 unless ALLOW_PRIVATE_TARGETS=true, preventing self-targeting. Traceroute requires elevated permissions in some environments (CAP_NET_RAW in containers for ICMP; UDP probes generally work). Geolocation accuracy ~95% city-level (GeoLite2) depending on database. Errors returned as plain text (client displays body directly).
 - **Tooltip Security:** Frontend builds tooltips as DOM elements using `textContent` (never HTML) to prevent XSS from attacker-controlled reverse DNS hostnames.
 - **Browser Compatibility:** Desktop browsers only (no mobile optimization); light theme assumes sRGB display.
