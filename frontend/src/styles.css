@@ -36,8 +36,9 @@ button, input { font: inherit; border-radius: 0; }
 .trace-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; max-width: 100%; position: relative; }
 .trace-form input { font: 500 16px var(--mono); border: 2px solid transparent; border-radius: 10px; background: var(--card); color: var(--ink); padding: 9px 12px; min-width: 0; }
 .field-endpoint { width: clamp(200px, 26vw, 380px); flex: 1 1 200px; }
-.field-guess { display: flex; align-items: stretch; gap: 8px; margin-top: 10px; }
-.field-guess input { flex: 1 1 120px; width: 0; min-width: 0; border-color: var(--ink); padding: 8px 10px; }
+.field-guess { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin-top: 10px; }
+/* 16px keeps iOS from zooming in on focus; the 140px basis wraps the unit toggle and button below rather than squeezing the input. */
+.field-guess input { flex: 1 1 140px; width: 0; min-width: 0; border-color: var(--ink); padding: 8px 10px; font-size: 16px; }
 .field-guess.is-invalid input { border-color: var(--error); box-shadow: 0 0 0 2px #f3b8b1; }
 .units { display: flex; padding: 3px; gap: 2px; align-items: center; background: var(--meadow); border-radius: 10px; }
 .units button { border: 0; background: none; color: var(--mute); font: 600 14px var(--display); padding: 5px 10px; border-radius: 7px; cursor: pointer; }
@@ -171,6 +172,8 @@ button, input { font: inherit; border-radius: 0; }
   .chip { display: none; }
   .brand-tag { display: none; }
   .go { flex: 1 0 100%; }
+  .field-guess input { flex-basis: 100%; }
+  .game .field-guess .go { flex: 1 1 0; }
 }
 
 @media (max-width: 360px) {
