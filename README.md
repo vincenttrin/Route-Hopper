@@ -31,6 +31,8 @@ npm install
 npm run dev
 ```
 
+`scripts/dev.sh` starts both in one command (see [backend/README.md](backend/README.md#run)).
+
 Open http://localhost:5173 and enter an endpoint. Without a GeoIP database the trace
 works but no hops are placed on the map; see
 [backend/README.md](backend/README.md#geolocation-database) for setting one up.
@@ -46,7 +48,7 @@ The UI is served on http://localhost:3000. nginx in the frontend container proxi
 GeoLite2 `.mmdb` files in `./geoip` (or point `GEOIP_DIR` elsewhere).
 
 Docker Desktop on macOS and Windows drops the replies traceroute relies on, so traces
-there show only the first hop. Use a Linux host, or run natively. Details are in
+there show only the first hop, and the UI warns about it. Use a Linux host, or run natively. Details are in
 [backend/README.md](backend/README.md#docker).
 
 ## Ports and environment variables
