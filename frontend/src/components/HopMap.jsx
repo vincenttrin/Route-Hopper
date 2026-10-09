@@ -44,7 +44,7 @@ export default function HopMap({ hops, destination, selected, onSelect }) {
   const layer = useRef(null);
   const markers = useRef(new Map());
   // The bunny rides on the newest located hop: its marker, the running glide, and how many hops it has seen.
-  const bunny = useRef({ marker: null, frame: 0, count: 0 });
+  const bunny = useRef({ marker: null, frame: 0, count: 0, last: null });
   const onSelectRef = useRef(onSelect);
 
   useEffect(() => {
@@ -113,13 +113,16 @@ export default function HopMap({ hops, destination, selected, onSelect }) {
     const rider = bunny.current;
     const last = hops.findLast((h) => h.located);
     const wasCount = rider.count;
+    const wasLast = rider.last;
     rider.count = hops.length;
+    rider.last = last;
     if (!last) {
       cancelAnimationFrame(rider.frame);
       rider.marker?.remove();
       rider.marker = null;
       return;
     }
+    if (rider.marker && wasLast && hops.length === wasCount && wasLast.lat === last.lat && wasLast.lng === last.lng) return;
     const to = L.latLng(last.lat, last.lng);
     if (!rider.marker) {
       rider.marker = L.marker(to, { icon: BUNNY_ICON, interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(map.current);

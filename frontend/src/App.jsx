@@ -50,6 +50,7 @@ export default function App() {
   const [landed, setLanded] = useState(true);
   const abort = useRef(null);
   const previous = useRef(null);
+  const tracing = useRef(false);
   const guessRef = useRef(null);
   const endpointRef = useRef(null);
 
@@ -106,6 +107,7 @@ export default function App() {
     abort.current = ctl;
     const current = () => abort.current === ctl && !ctl.signal.aborted;
     previous.current = { raw, endpoint, isExample };
+    tracing.current = false;
     const startedAt = Date.now();
     let streamed = null;
     setBusy(true);
@@ -121,6 +123,7 @@ export default function App() {
           if (!current()) return;
           // The first event means the server took the request: leave the previous trace behind.
           if (!streamed) {
+            tracing.current = true;
             setEndpoint(value);
             setExample(false);
             setSelected(null);
@@ -143,6 +146,7 @@ export default function App() {
         const data = await runTrace(value, 30, ctl.signal);
         if (!data.hops?.length) throw new Error('The trace returned no hops.');
         if (!current()) return;
+        tracing.current = true;
         setRaw(data);
         setShown(0);
         setLive({ startedAt, phase: null });
@@ -167,7 +171,7 @@ export default function App() {
   // Stops the trace right away: hops found but not yet shown are dropped, so it ends where the bunny is.
   const cancel = () => {
     abort.current?.abort();
-    if (shown === 0) {
+    if (!tracing.current || shown === 0) {
       restore();
       return;
     }
