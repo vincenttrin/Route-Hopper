@@ -91,17 +91,13 @@ export default function LineDiagram({ hops, live = false, selected, onSelect }) 
       <Track hops={hops} />
       {hops.map((h) => {
         const pad = String(h.n).padStart(2, '0');
-        const title = h.hidden ? 'Hidden start' : h.network ? h.city || h.hostname || h.ip : 'No reply';
+        const title = h.network ? h.city || h.hostname || h.ip : 'No reply';
         const ends = !live && h === hops[hops.length - 1];
         const silentMeta =
           h.span > 1
             ? `HOPS ${pad}-${String(h.n + h.span - 1).padStart(2, '0')} - * * * - no reply, the trace ends here`
             : `HOP ${pad} - * * * - ${ends ? 'no reply, the trace ends here' : 'probe timed out, route continues'}`;
-        const meta = h.hidden
-          ? `HOP ${pad} - hidden for privacy`
-          : h.network
-            ? [`HOP ${pad}`, h.hostname, h.ip].filter(Boolean).join(' - ')
-            : silentMeta;
+        const meta = h.network ? [`HOP ${pad}`, h.hostname, h.ip].filter(Boolean).join(' - ') : silentMeta;
         const selectable = h.located;
         return (
           <li key={h.n} className={`row${selected === h.n ? ' is-selected' : ''}${h.network ? '' : ' is-miss'}`}>
@@ -118,7 +114,7 @@ export default function LineDiagram({ hops, live = false, selected, onSelect }) 
                   {title}
                   {h.network ? (
                     <span className="chip" style={{ background: h.color }}>
-                      {h.hidden ? 'Private' : h.network}
+                      {h.network}
                     </span>
                   ) : (
                     <span className="chip chip-unknown">Unknown</span>

@@ -51,9 +51,6 @@ type hopJSON struct {
 	Lat       float64 `json:"lat"`
 	Lng       float64 `json:"lng"`
 	RTT       float64 `json:"rtt"`
-	// Hidden marks the one placeholder for the start of the route, which is
-	// withheld so the client cannot tell where the trace began (see redactor).
-	Hidden bool `json:"hidden,omitempty"`
 }
 
 type destinationJSON struct {
@@ -137,11 +134,9 @@ func (a *API) Trace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := traceResponse{Hops: make([]hopJSON, 0, len(hops)), Reached: trace.Reached(hops, ip)}
-	red := a.redactor(ip)
 	for _, h := range hops {
-		resp.Hops = append(resp.Hops, red.Add(h)...)
+		resp.Hops = append(resp.Hops, a.enrich(h))
 	}
-	resp.Hops = append(resp.Hops, red.Flush()...)
 	resp.Warning = a.warning(ip, hops)
 	resp.Destination = a.destination(ip)
 	writeJSON(w, resp)
@@ -194,20 +189,14 @@ func (a *API) TraceStream(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Accel-Buffering", "no")
 	dest := a.destination(ip)
 	send(streamEvent{Type: "start", Destination: &dest})
-	red := a.redactor(ip)
-	sendHops := func(hops []hopJSON) {
-		for i := range hops {
-			send(streamEvent{Type: "hop", Hop: &hops[i]})
-		}
-	}
 
 	hops, err := a.Tracer.Stream(ctx, ip, maxHops, trace.Sink{
-		Hop:   func(h trace.Hop) { sendHops(red.Add(h)) },
-		Phase: func(p trace.Phase) { send(streamEvent{Type: "phase", Phase: string(p)}) },
-		Reset: func() {
-			red.reset()
-			send(streamEvent{Type: "reset"})
+		Hop: func(h trace.Hop) {
+			hj := a.enrich(h)
+			send(streamEvent{Type: "hop", Hop: &hj})
 		},
+		Phase: func(p trace.Phase) { send(streamEvent{Type: "phase", Phase: string(p)}) },
+		Reset: func() { send(streamEvent{Type: "reset"}) },
 	})
 	if err != nil {
 		if ctx.Err() == nil {
@@ -216,7 +205,6 @@ func (a *API) TraceStream(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	sendHops(red.Flush())
 	reached := trace.Reached(hops, ip)
 	send(streamEvent{Type: "done", Destination: &dest, Reached: &reached, Warning: a.warning(ip, hops)})
 }
@@ -232,11 +220,6 @@ func (a *API) enrich(h trace.Hop) hopJSON {
 		}
 	}
 	return hj
-}
-
-// redactor starts the source redaction for a trace to ip.
-func (a *API) redactor(ip netip.Addr) *redactor {
-	return newRedactor(ip, a.locate, a.enrich)
 }
 
 func (a *API) destination(ip netip.Addr) destinationJSON {

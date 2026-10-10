@@ -6,8 +6,6 @@ export const LOCAL_COLOR = '#7a6f6a';
 const PALETTE = ['#b0306a', '#1f6fb5', '#277a4c', '#7a4fb5', '#0f7f82', '#8a5a2b'];
 
 function networkOf(hop) {
-  // The hidden start of the route is the local network, as far as the map is concerned.
-  if (hop.hidden) return LOCAL;
   if (!hop.ip) return null;
   if (PRIVATE_IP.test(hop.ip)) return LOCAL;
   if (hop.org) return hop.org;
@@ -39,14 +37,12 @@ export function normalizeTrace(raw, { partial = false } = {}) {
       city: clean(h.city),
       country: clean(h.country),
       org: h.org,
-      // The server withholds where the trace started: one hop stands in for it and carries nothing else.
-      hidden: h.hidden === true,
       lat: h.lat,
       lng: h.lng,
       rtt: ip && Number.isFinite(h.rtt) ? h.rtt : null,
       span: 1,
     };
-    hop.located = Boolean(ip) && !hop.hidden && hasGeo(hop);
+    hop.located = Boolean(ip) && hasGeo(hop);
     hop.network = networkOf(hop);
     if (hop.network) {
       if (prevNet && hop.network !== prevNet) lane = 1 - lane;
@@ -63,7 +59,7 @@ export function normalizeTrace(raw, { partial = false } = {}) {
   // A no-reply hop borrows the lane of the hop before it, which is already set above.
   const d = raw.destination;
   let tail = hops.length;
-  while (tail > 0 && !hops[tail - 1].ip && !hops[tail - 1].hidden) tail--;
+  while (tail > 0 && !hops[tail - 1].ip) tail--;
   const lastReply = tail > 0 ? hops[tail - 1].n : null;
   let reached;
   if (partial) {

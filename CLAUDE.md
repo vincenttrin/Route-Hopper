@@ -153,7 +153,7 @@ docker-compose down
 - **Geography Map (Side Panel):** Leaflet map with OpenStreetMap tiles showing only located hops. Polylines (drawn as arcs) connect hops, color-coded by network. Destination marked with an orange dot. Map pans and zooms to selected hop.
 - **Network Legend:** Lists all networks crossed, with color swatches. Private IPs shown as "Local network" (grey).
 - **Stats:** Distance between located hops (km or miles, shown as "?" until the player has guessed), latency to destination (RTT of the final hop if the destination replied, else "-"), count of networks crossed.
-- **Example Trace:** First load shows a sample trace across ISP networks from Chicago to Amsterdam, providing clear orientation before the user enters their own endpoint.
+- **Example Trace:** First load shows a sample trace across ISP networks from Omaha to Amsterdam, providing clear orientation before the user enters their own endpoint.
 
 ### Hop Processing (Frontend)
 - **No Reply:** Hops with no IP address (ip = "" or "*") are marked "No reply" and not plotted on the map.

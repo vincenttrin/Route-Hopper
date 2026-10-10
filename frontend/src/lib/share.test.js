@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { appLink, countriesOf, endpointLabel, shareTrip, tripSummary } from './share.js';
+import { appLink, endpointLabel, hopLine, shareTrip, tripSummary } from './share.js';
 import { normalizeTrace, summarize } from './trace.js';
 import { judgeRound } from './game.js';
 import { SAMPLE_TRACE } from '../services/sample.js';
@@ -17,64 +17,57 @@ describe('endpointLabel', () => {
   });
 });
 
-describe('countriesOf', () => {
-  it('lists each country once, in route order, by name', () => {
-    const hops = [
-      { located: true, country: 'US' },
-      { located: true, country: 'US' },
-      { located: false, country: 'FR' },
-      { located: true, country: 'IE' },
-      { located: true, country: null },
-      { located: true, country: 'NL' },
-    ];
-    expect(countriesOf(hops)).toEqual(['United States', 'Ireland', 'Netherlands']);
+describe('hopLine', () => {
+  const hop = (network, span) => ({ network, span });
+
+  it('draws a bunny, a tile per hop coloured by network, and a carrot', () => {
+    const hops = [hop('Local network'), hop('Cox'), hop('Cox'), hop('Lumen'), hop(null), hop('Cox'), hop('GTT')];
+    expect(hopLine(hops)).toBe('🐇⬜🟪🟪🟦⬛🟪🟩🥕');
+  });
+
+  it('counts a folded run of silent hops as that many tiles and drops the carrot when the destination never replied', () => {
+    expect(hopLine([hop('Cox'), hop(null, 3)], false)).toBe('🐇🟪⬛⬛⬛');
+  });
+
+  it('stays short for a long route', () => {
+    const hops = Array.from({ length: 30 }, () => hop('Cox'));
+    expect([...hopLine(hops)].length).toBeLessThanOrEqual(24);
+    expect(hopLine(hops)).toContain('…');
   });
 });
 
 describe('tripSummary', () => {
-  const withCountries = {
-    hops: [
-      { hopNumber: 1, hidden: true },
-      { hopNumber: 2, ip: '68.1.1.37', hostname: 'chgil-cr1.cox.net', city: 'Chicago', country: 'US', org: 'Cox', lat: 41.88, lng: -87.63, rtt: 19 },
-      { hopNumber: 3, ip: '213.200.80.1', hostname: 'ae-12.dub.gtt.net', city: 'Dublin', country: 'IE', org: 'GTT', lat: 53.35, lng: -6.26, rtt: 113 },
-      { hopNumber: 4, ip: '93.184.216.34', hostname: 'example.com', city: 'Amsterdam', country: 'NL', org: 'Edgecast', lat: 52.37, lng: 4.9, rtt: 128 },
-    ],
-    destination: { ip: '93.184.216.34', city: 'Amsterdam', lat: 52.37, lng: 4.9 },
-  };
-  const t = normalizeTrace(withCountries);
-  const s = summarize(t.hops, t.networks);
-
-  it('summarizes the trip and the score', () => {
-    const result = judgeRound(5000, s.exactKm, s.located);
-    const text = tripSummary({ endpoint: 'https://example.com/path?x=1', trace: t, stats: s, result, unit: 'km' });
-    expect(text.split('\n')).toEqual([
-      '🐰 I followed a packet to example.com (Amsterdam, Netherlands)!',
-      `It hopped 4 times and travelled about ${Math.round(s.exactKm).toLocaleString('en-US')} km across 3 networks, passing through United States, Ireland, and Netherlands.`,
-      `I guessed 5,000 km and scored ${result.score}/100. Can you beat my bunny score? 🥕`,
+  it('is a short card with the title, score, guess against actual, and the hop line', () => {
+    const result = judgeRound(5000, stats.exactKm, stats.located);
+    const text = tripSummary({ endpoint: 'https://example.com/path?x=1', trace, stats, result, unit: 'km' });
+    const lines = text.split('\n');
+    expect(lines).toEqual([
+      '🐰 Route Hopper: example.com',
+      `Score ${result.score}/100`,
+      `Guessed 5,000 km, actual ${Math.round(stats.exactKm).toLocaleString('en-US')} km`,
+      hopLine(trace.hops),
     ]);
+    expect(text.length).toBeLessThan(160);
   });
 
   it('uses the unit the player picked', () => {
-    const result = judgeRound(3000, s.exactKm, s.located);
-    expect(tripSummary({ endpoint: 'example.com', trace: t, stats: s, result, unit: 'mi' })).toMatch(/ mi/);
+    const result = judgeRound(3000, stats.exactKm, stats.located);
+    expect(tripSummary({ endpoint: 'example.com', trace, stats, result, unit: 'mi' })).toMatch(/Guessed .* mi, actual .* mi/);
   });
 
-  it('invites a guess when none was made, and skips the distance it cannot give', () => {
-    const one = normalizeTrace({ hops: [{ hopNumber: 1, hidden: true }, withCountries.hops[3]], destination: withCountries.destination });
-    const text = tripSummary({ endpoint: 'example.com', trace: one, stats: summarize(one.hops, one.networks), result: { status: 'unscoreable', reason: 'few-hops' } });
-    expect(text).not.toMatch(/travelled/);
-    expect(text).toMatch(/Think you can guess/);
-    expect(text).toMatch(/It hopped 2 times across 1 network, passing through Netherlands\./);
-  });
-
-  it('never says where the trace started', () => {
+  it('shows the trip facts instead of a score when nothing was guessed', () => {
     const text = tripSummary({ endpoint: 'example.com', trace, stats, result: null });
-    for (const leak of ['192.168', 'gateway', 'Omaha', 'cox.net', '68.1.', 'Local network', 'hidden']) {
-      expect(text).not.toContain(leak);
-    }
-    // No address or host name of any hop either, only the destination the player typed.
-    expect(text).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
-    expect(text).not.toMatch(/lumen|gtt/i);
+    expect(text.split('\n')).toEqual([
+      '🐰 Route Hopper: example.com',
+      `${stats.hops} hops, ${Math.round(stats.exactKm).toLocaleString('en-US')} km`,
+      hopLine(trace.hops),
+    ]);
+  });
+
+  it('leaves the distance out when the route has none', () => {
+    const one = normalizeTrace({ hops: [{ hopNumber: 1, ip: '93.184.216.34', city: 'Amsterdam', lat: 52.37, lng: 4.9 }], destination: { ip: '93.184.216.34' } });
+    const text = tripSummary({ endpoint: 'example.com', trace: one, stats: summarize(one.hops, one.networks), result: { status: 'unscoreable', reason: 'few-hops' } });
+    expect(text.split('\n')[1]).toBe('1 hop');
   });
 
   it('has no em dashes', () => {

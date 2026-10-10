@@ -37,7 +37,7 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
 ```json
 {
   "hops": [
-    { "hopNumber": 1, "ip": "", "hostname": "", "lat": 0, "lng": 0, "rtt": 0, "hidden": true },
+    { "hopNumber": 1, "ip": "192.168.1.1", "hostname": "", "lat": 0, "lng": 0, "rtt": 3.1 },
     { "hopNumber": 2, "ip": "", "hostname": "", "lat": 0, "lng": 0, "rtt": 0 },
     { "hopNumber": 3, "ip": "1.0.0.1", "hostname": "one.one.one.one", "city": "Sydney",
       "country": "AU", "org": "Cloudflare", "lat": -33.86, "lng": 151.2, "rtt": 25.8 }
@@ -59,9 +59,6 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
   database, see [Geolocation database](#geolocation-database)). The frontend shows it
   above the results.
 
-- Hop 1 is the hidden start of the route: where the trace began is withheld, see
-  [Privacy](#privacy-the-start-of-the-route-is-hidden). `hidden: true` marks it, and it
-  carries nothing else.
 - A hop that never answered has an empty `ip`; a hop without geolocation (private
   addresses, unknown ranges) has `lat` and `lng` of 0.
 - `rtt` is the mean of the answered probes in milliseconds.
@@ -109,46 +106,6 @@ location database (it may still be downloading, or the download failed), in whic
 
 `updated` is the build date of the City database (UTC). Without a database it is just
 `{ "available": false }`. It changes by itself when the databases are refreshed.
-
-## Privacy: the start of the route is hidden
-
-A traceroute begins at the machine running the backend, and its first hops describe that
-network: the LAN gateway, then the ISP's routers around it. Their addresses, reverse DNS names
-(router names usually carry a city code, like `chgil-cr1.cox.net`) and locations would tell any
-client roughly where the server or its user is. **None of it leaves the backend**, on both
-`POST /api/trace` and `POST /api/trace/stream`; the logic is `handlers/redact.go`, with tests in
-`handlers/redact_test.go`.
-
-The **origin** is cut from the route and replaced by a single hop `{"hopNumber":1,"hidden":true}`
-with no address, host name, location, owner or latency. Later hops are renumbered after it, so
-neither the details nor the number of hidden hops can be read from the response. The origin is:
-
-1. every hop before the first public address: private (RFC 1918, ULA), loopback, link-local and
-   carrier-grade NAT (100.64.0.0/10) addresses, and silent hops;
-2. the first public hop, the access network's first router on the internet;
-3. each following hop that belongs to the same network as that first public hop, meaning the
-   same owner in the ASN database or the same registered domain in its reverse DNS name
-   (last two labels, `cox.net`), or that is located within 100 km of it (`NearSourceKm`).
-   Silent and private hops between such hops are part of the origin; if the trace ends or
-   leaves the origin before another such hop, they are sent as silent hops with no address,
-   host name or latency. This is the access
-   ISP's own backbone, up to where it hands the packet to another network.
-
-The origin ends at the first public hop that is none of these. Rules that keep the result usable:
-
-- The **destination hop is never hidden**, even if it sits right next to the source.
-- If nothing but the origin answered (Docker Desktop, a firewall dropping TTL-exceeded
-  replies), the response is just the hidden hop, and the usual `warning` explains why.
-- The frontend computes the distance, the map and the share text only from the hops it
-  receives, so the hidden hop contributes nothing to them.
-
-Limits. The first visible hop is where the trace leaves the origin network, usually an
-exchange point or a transit provider, so the source's country and rough region can still be
-guessed from it; that is deliberate, the cut hides the origin network, not the whole
-neighbourhood. Without a GeoIP database or reverse DNS names nothing says which later hops
-belong to the origin network, so only the first public hop (and what precedes it) is
-hidden, and later ISP hops may still show their names. Server logs (`log.Printf`) are
-unaffected and still see the full trace.
 
 ## Geolocation database
 
@@ -233,9 +190,8 @@ Linux the folder must be writable by it (`chown 10001 geoip`), or it cannot save
 environment to use GeoLite2, or `GEOIP_AUTO_UPDATE=false` to manage the files yourself.
 
 Docker Desktop on macOS and Windows runs containers behind a NAT that drops the
-"TTL exceeded" replies traceroute depends on, so traces from there show nothing past the
-container's gateway (which is part of the hidden start, so the UI shows only that, or the
-destination when it answers). The backend detects this (no reply from any hop
+"TTL exceeded" replies traceroute depends on, so traces from there show the container's
+gateway as hop 1 and then no replies. The backend detects this (no reply from any hop
 past the first) and returns a `warning`, which the UI shows as a banner and the server
 logs. Use a Linux host for real traces, or run the backend natively with
 `scripts/dev.sh` (see [Run](#run)). A firewall that drops all TTL-exceeded replies

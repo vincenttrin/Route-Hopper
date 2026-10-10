@@ -1,7 +1,7 @@
-// The share summary: a friendly, bunny-themed text about a finished trip that can be sent to a friend.
-// It says where the packet went and how far, never where it started: the server withholds the route's
-// start (see backend/handlers/redact.go) and nothing here reads hop addresses or host names.
+// The share message: a short, game-style card about a finished trip, in the spirit of daily puzzle
+// shares (a title, the score, a line of emoji tiles, the link). It is built to fit in a text message.
 import { formatDistance, MIN_SCOREABLE_KM } from './game.js';
+import { LOCAL } from './trace.js';
 
 /** The host the player asked about, without scheme, credentials, path or query ("https://a:b@Example.com/x?t=1" gives "example.com"). */
 export function endpointLabel(endpoint) {
@@ -15,58 +15,54 @@ export function endpointLabel(endpoint) {
   }
 }
 
-function countryName(code) {
-  try {
-    return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) || code;
-  } catch {
-    return code;
-  }
-}
+// One tile per network crossed, in the order the route reaches them.
+const NETWORK_TILES = ['🟪', '🟦', '🟩', '🟨', '🟫', '🟥'];
+const LOCAL_TILE = '⬜';
+const SILENT_TILE = '⬛';
+const DEST_TILE = '🥕';
+// A text message should stay short even for a 30-hop route.
+const MAX_TILES = 20;
 
-function list(items) {
-  try {
-    return new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(items);
-  } catch {
-    return items.join(', ');
-  }
-}
-
-const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
-/** Countries the route passed through, by name, in the order it reached them. */
-export function countriesOf(hops) {
-  const codes = [];
+/** The hop line: a bunny, one tile per hop coloured by network (white for the local network, black for no reply), and a carrot at the end. */
+export function hopLine(hops, reached = true) {
+  const tiles = new Map();
+  const out = [];
   for (const h of hops) {
-    if (h.located && h.country && !codes.includes(h.country)) codes.push(h.country);
+    let tile = SILENT_TILE;
+    if (h.network === LOCAL) tile = LOCAL_TILE;
+    else if (h.network) {
+      if (!tiles.has(h.network)) tiles.set(h.network, NETWORK_TILES[tiles.size % NETWORK_TILES.length]);
+      tile = tiles.get(h.network);
+    }
+    for (let i = 0; i < (h.span ?? 1); i++) out.push(tile);
   }
-  return codes.map(countryName);
+  const shown = out.length > MAX_TILES ? [...out.slice(0, MAX_TILES - 1), '…'] : out;
+  return `🐇${shown.join('')}${reached ? DEST_TILE : ''}`;
 }
 
 /**
- * The text to share for a finished trip. `trace` and `stats` are the normalized trace and its summary;
- * `result` is the judged round (null when the player did not guess). Only coarse facts are used: the
- * destination the player typed, hop and network counts, the total distance, the countries passed
- * through, and the guess and score.
+ * The text to share for a finished trip, a few short lines:
+ *
+ *   🐰 Route Hopper: example.com
+ *   Score 87/100
+ *   Guessed 5,000 km, actual 7,432 km
+ *   🐇⬜🟪🟦🟦🟩🥕
+ *
+ * `trace` and `stats` are the normalized trace and its summary; `result` is the judged round (null or
+ * unscoreable when there was nothing to guess, which shows the trip's facts instead of a score).
  */
 export function tripSummary({ endpoint, trace, stats, result, unit = 'km' }) {
-  const target = trace.hops.find((h) => h.destination);
-  const city = trace.destination?.city || target?.city;
-  const country = target?.country ? countryName(target.country) : null;
-  const place = [city, country].filter(Boolean).join(', ');
-  const lines = [`🐰 I followed a packet to ${endpointLabel(endpoint)}${place ? ` (${place})` : ''}!`];
-
-  let trip = `It hopped ${plural(stats.hops, 'time')}`;
-  if (stats.located >= 2 && stats.exactKm >= MIN_SCOREABLE_KM) trip += ` and travelled about ${formatDistance(stats.exactKm, unit)}`;
-  if (stats.networks > 0) trip += ` across ${plural(stats.networks, 'network')}`;
-  const countries = countriesOf(trace.hops);
-  if (countries.length) trip += `, passing through ${list(countries)}`;
-  lines.push(`${trip}.`);
-
+  const lines = [`🐰 Route Hopper: ${endpointLabel(endpoint)}`];
+  const hasDistance = stats.located >= 2 && stats.exactKm >= MIN_SCOREABLE_KM;
   if (result?.status === 'scored') {
-    lines.push(`I guessed ${formatDistance(result.guessKm, unit)} and scored ${result.score}/100. Can you beat my bunny score? 🥕`);
+    lines.push(`Score ${result.score}/100`);
+    lines.push(`Guessed ${formatDistance(result.guessKm, unit)}, actual ${formatDistance(stats.exactKm, unit)}`);
   } else {
-    lines.push('Think you can guess how far it went? 🥕');
+    const facts = [`${stats.hops} ${stats.hops === 1 ? 'hop' : 'hops'}`];
+    if (hasDistance) facts.push(formatDistance(stats.exactKm, unit));
+    lines.push(facts.join(', '));
   }
+  lines.push(hopLine(trace.hops, trace.reached !== false));
   return lines.join('\n');
 }
 

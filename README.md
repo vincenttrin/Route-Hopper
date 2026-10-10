@@ -54,40 +54,25 @@ A round is not scored, and says why, when:
 ## Sharing a trip
 
 When a round is finished (scored, or too short to guess) a **Share trip** button appears next
-to **Play again**. It shares a short, friendly summary: the destination, how many hops, the
-total distance, the networks crossed, the countries the route passed through, and your guess
-and score if you played. For example:
+to **Play again**. It shares a short, game-style card in the spirit of daily puzzle games: the title, your
+score, your guess against the actual distance, and a line of emoji tiles for the route (a
+bunny, one tile per hop coloured by network, a carrot at the end). For example:
 
 ```
-🐰 I followed a packet to example.com (Amsterdam, Netherlands)!
-It hopped 9 times and travelled about 7,200 km across 4 networks, passing through United States, Ireland, United Kingdom, and Netherlands.
-I guessed 8,000 km and scored 90/100. Can you beat my bunny score? 🥕
+🐰 Route Hopper: example.com
+Score 90/100
+Guessed 8,000 km, actual 7,200 km
+🐇⬜🟪🟪🟦🟦🟦⬛🟩🟩🥕
 ```
+
+White tiles are your local network and black tiles are hops that did not reply. If there was
+nothing to guess, the second line shows the hop count and distance instead of a score.
 
 The browser's share sheet is used where there is one (Web Share API, so phones and recent
 desktop browsers); otherwise the text is copied to the clipboard, and if even that is blocked it
 is shown for you to copy by hand. A link to the app is added unless it runs on `localhost`.
-The summary is built in `frontend/src/lib/share.js`. It only uses the destination you typed
-(host name only, never a path or query) and coarse facts, never hop addresses or host names.
-
-## Privacy: the start of the route is hidden
-
-The trace starts from wherever the backend runs, and the first hops of a traceroute describe
-that network: the LAN gateway, then the ISP's routers around it, whose addresses, host names
-(they usually carry a city code) and locations would say roughly where the server or you are.
-So the **backend** cuts them out before anything reaches the browser. They are replaced by one
-**hidden start** hop, shown as "Hidden start / Private", with no address, name, location or
-latency, and the remaining hops are renumbered from 2, so even the number of hidden hops is
-not revealed. The distance, the map and the share text only use the hops that remain.
-
-What counts as the start: every hop before the first public address (private, loopback and
-carrier-grade NAT addresses, silent hops), the first public hop, and the following hops that
-belong to the same network as the first public hop (same network owner, or same host name
-domain) or are located within 100 km of it. The destination is never hidden. Details and
-limits are in [backend/README.md](backend/README.md#privacy-the-start-of-the-route-is-hidden).
-The first visible hop is where the trace leaves that network, so its country and
-metro area still show; and with no GeoIP database nothing says which hops belong to the
-start, so only the first public hop is hidden.
+The card is built in `frontend/src/lib/share.js`. It uses the destination you typed (host name
+only, never a path or query), never hop addresses or host names.
 
 - **Frontend:** React, Leaflet (OpenStreetMap tiles), Vite
 - **Backend:** Go REST API that shells out to the system `traceroute`
