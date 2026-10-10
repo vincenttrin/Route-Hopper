@@ -221,8 +221,8 @@ forwarded-header handling before exposing this directly.
 ## Docker
 
 From the repo root, `docker compose up --build` serves the frontend on
-http://localhost:3000 (`PORT` to change it) and proxies `/api` to the backend, which is
-not published on the host. The backend downloads the location databases itself on first
+http://localhost:5173 (`PORT` to change it) and proxies `/api` to the backend, which is
+not published on the host (the Vite dev server uses the same port, so stop it first). The backend downloads the location databases itself on first
 start (see [Geolocation database](#geolocation-database)).
 
 The databases live in the `geoip` named volume mounted at `/data`, so they survive restarts

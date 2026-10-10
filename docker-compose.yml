@@ -21,7 +21,7 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "${PORT:-3000}:80"
+      - "${PORT:-5173}:80"
     depends_on:
       backend:
         condition: service_healthy
