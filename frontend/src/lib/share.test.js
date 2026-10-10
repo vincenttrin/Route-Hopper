@@ -86,7 +86,7 @@ describe('appLink', () => {
   it('links to the page unless nobody else could open it', () => {
     expect(appLink({ protocol: 'https:', hostname: 'hop.example.com', origin: 'https://hop.example.com', pathname: '/' })).toBe('https://hop.example.com/');
     expect(appLink({ protocol: 'http:', hostname: 'localhost', origin: 'http://localhost:5173', pathname: '/' })).toBeNull();
-    expect(appLink({ protocol: 'http:', hostname: '127.0.0.1', origin: 'http://127.0.0.1:3000', pathname: '/' })).toBeNull();
+    expect(appLink({ protocol: 'http:', hostname: '127.0.0.1', origin: 'http://127.0.0.1:5173', pathname: '/' })).toBeNull();
     expect(appLink({ protocol: 'file:', hostname: '', origin: 'null', pathname: '/x' })).toBeNull();
     expect(appLink(undefined)).toBeNull();
   });

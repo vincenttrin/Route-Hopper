@@ -127,7 +127,7 @@ works but no hops are placed on the map; see
 docker compose up --build
 ```
 
-The UI is served on http://localhost:3000. nginx in the frontend container proxies
+The UI is served on http://localhost:5173. nginx in the frontend container proxies
 `/api` to the backend, which is not published on the host.
 
 **Location database:** nothing to set up. On first start the backend downloads the free
@@ -153,12 +153,11 @@ there show only the first hop, and the UI warns about it. Use a Linux host, or r
 | Port | Service |
 | --- | --- |
 | 8080 | Backend API (native run; `PORT` to change) |
-| 5173 | Vite dev server |
-| 3000 | Frontend in Docker Compose (`PORT` to change) |
+| 5173 | Vite dev server (native run) or frontend in Docker Compose (`PORT` to change); the two cannot run at the same time on one host |
 
 | Variable | Default | Used by |
 | --- | --- | --- |
-| `PORT` | `8080` native, `3000` compose | Backend listen port; compose host port for the UI |
+| `PORT` | `8080` native, `5173` compose | Backend listen port; compose host port for the UI |
 | `GEOIP_CITY_DB`, `GEOIP_ASN_DB` | `GeoLite2-City.mmdb`, `GeoLite2-ASN.mmdb` in the working directory | Backend database paths |
 | `GEOIP_AUTO_UPDATE` | `true` in Docker and `scripts/dev.sh`, else `false` | Backend: download the GeoIP databases when missing and refresh them monthly |
 | `MAXMIND_LICENSE_KEY` | unset | Backend: use MaxMind GeoLite2 instead of keyless DB-IP Lite |
