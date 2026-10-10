@@ -5,7 +5,7 @@ app runs a traceroute, looks up each hop's location and network, and draws the r
 a line diagram next to a map, with the bunny hopping from hop to hop on both. On the map
 the route is drawn as arcs and the bunny bounces along them (the arcs are only for show;
 distances are measured along straight great-circle legs). The first load shows an example
-trace (Chicago to Amsterdam) so you can see the layout before tracing anything.
+trace (Omaha to Amsterdam) so you can see the layout before tracing anything.
 
 Hops are discovered one at a time and shown at a steady pace: at least 1.2 seconds
 apart, however fast the backend finds them, so the hopping is easy to watch. The pace is
