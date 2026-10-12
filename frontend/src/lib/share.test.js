@@ -37,34 +37,19 @@ describe('hopLine', () => {
 });
 
 describe('tripSummary', () => {
-  it('is a short card with the title, score, guess against actual, and the hop line', () => {
+  it('is a short card with the title, score and the hop line, and no distances', () => {
     const result = judgeRound(5000, stats.exactKm, stats.located);
-    const text = tripSummary({ endpoint: 'https://example.com/path?x=1', trace, stats, result, unit: 'km' });
-    const lines = text.split('\n');
-    expect(lines).toEqual([
-      '🐰 Route Hopper: example.com',
-      `Score ${result.score}/100`,
-      `Guessed 5,000 km, actual ${Math.round(stats.exactKm).toLocaleString('en-US')} km`,
-      hopLine(trace.hops),
-    ]);
-    expect(text.length).toBeLessThan(160);
+    const text = tripSummary({ endpoint: 'https://example.com/path?x=1', trace, stats, result });
+    expect(text.split('\n')).toEqual(['🐰 Route Hopper: example.com', `Score ${result.score}/100`, hopLine(trace.hops)]);
+    expect(text).not.toMatch(/km|mi\b|Guessed|actual/);
   });
 
-  it('uses the unit the player picked', () => {
-    const result = judgeRound(3000, stats.exactKm, stats.located);
-    expect(tripSummary({ endpoint: 'example.com', trace, stats, result, unit: 'mi' })).toMatch(/Guessed .* mi, actual .* mi/);
-  });
-
-  it('shows the trip facts instead of a score when nothing was guessed', () => {
+  it('shows the hop count instead of a score when nothing was guessed, without the distance', () => {
     const text = tripSummary({ endpoint: 'example.com', trace, stats, result: null });
-    expect(text.split('\n')).toEqual([
-      '🐰 Route Hopper: example.com',
-      `${stats.hops} hops, ${Math.round(stats.exactKm).toLocaleString('en-US')} km`,
-      hopLine(trace.hops),
-    ]);
+    expect(text.split('\n')).toEqual(['🐰 Route Hopper: example.com', `${stats.hops} hops`, hopLine(trace.hops)]);
   });
 
-  it('leaves the distance out when the route has none', () => {
+  it('uses the singular for one hop', () => {
     const one = normalizeTrace({ hops: [{ hopNumber: 1, ip: '93.184.216.34', city: 'Amsterdam', lat: 52.37, lng: 4.9 }], destination: { ip: '93.184.216.34' } });
     const text = tripSummary({ endpoint: 'example.com', trace: one, stats: summarize(one.hops, one.networks), result: { status: 'unscoreable', reason: 'few-hops' } });
     expect(text.split('\n')[1]).toBe('1 hop');
@@ -86,13 +71,20 @@ describe('appLink', () => {
 });
 
 describe('shareTrip', () => {
-  const payload = { title: 'Route Hopper', text: 'hello', url: 'https://hop.example.com/' };
+  const payload = { text: 'hello', url: 'https://hop.example.com/' };
+  const full = 'hello\nhttps://hop.example.com/';
 
-  it('uses the Web Share API when there is one', async () => {
+  it('shares the card and the link together in the text, with no separate url or title', async () => {
     const nav = { share: vi.fn().mockResolvedValue(), clipboard: { writeText: vi.fn() } };
     expect(await shareTrip(payload, { nav })).toBe('shared');
-    expect(nav.share).toHaveBeenCalledWith(payload);
+    expect(nav.share).toHaveBeenCalledWith({ text: full });
     expect(nav.clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  it('shares just the card when there is no link', async () => {
+    const nav = { share: vi.fn().mockResolvedValue() };
+    await shareTrip({ text: 'hello', url: null }, { nav });
+    expect(nav.share).toHaveBeenCalledWith({ text: 'hello' });
   });
 
   it('treats closing the share sheet as a cancel, not a failure', async () => {
@@ -101,11 +93,11 @@ describe('shareTrip', () => {
     expect(nav.clipboard.writeText).not.toHaveBeenCalled();
   });
 
-  it('copies to the clipboard, link included, when sharing is missing or refused', async () => {
+  it('copies the same text to the clipboard when sharing is missing or refused', async () => {
     for (const share of [undefined, vi.fn().mockRejectedValue(Object.assign(new Error('x'), { name: 'NotAllowedError' }))]) {
       const nav = { share, clipboard: { writeText: vi.fn().mockResolvedValue() } };
       expect(await shareTrip(payload, { nav })).toBe('copied');
-      expect(nav.clipboard.writeText).toHaveBeenCalledWith('hello\nhttps://hop.example.com/');
+      expect(nav.clipboard.writeText).toHaveBeenCalledWith(full);
     }
     const nav = { share: vi.fn(), canShare: () => false, clipboard: { writeText: vi.fn().mockResolvedValue() } };
     expect(await shareTrip({ ...payload, url: null }, { nav })).toBe('copied');
@@ -117,7 +109,7 @@ describe('shareTrip', () => {
     const area = { setAttribute: vi.fn(), select: vi.fn(), remove: vi.fn(), style: {} };
     const doc = { body: { appendChild: vi.fn() }, createElement: vi.fn(() => area), execCommand: vi.fn(() => true) };
     expect(await shareTrip(payload, { nav: {}, doc })).toBe('copied');
-    expect(area.value).toBe('hello\nhttps://hop.example.com/');
+    expect(area.value).toBe(full);
     expect(doc.execCommand).toHaveBeenCalledWith('copy');
     expect(area.remove).toHaveBeenCalled();
   });
