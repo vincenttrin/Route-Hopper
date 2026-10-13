@@ -18,7 +18,7 @@ export default function ShareButton({ text }) {
   }, [outcome]);
 
   const share = async () => {
-    const result = await shareTrip({ title: 'Route Hopper', text, url: appLink(window.location) });
+    const result = await shareTrip({ text, url: appLink(window.location) });
     setOutcome(result === 'cancelled' ? null : result);
   };
 

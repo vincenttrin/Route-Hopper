@@ -1,6 +1,5 @@
 // The share message: a short, game-style card about a finished trip, in the spirit of daily puzzle
 // shares (a title, the score, a line of emoji tiles, the link). It is built to fit in a text message.
-import { formatDistance, MIN_SCOREABLE_KM } from './game.js';
 import { LOCAL } from './trace.js';
 
 /** The host the player asked about, without scheme, credentials, path or query ("https://a:b@Example.com/x?t=1" gives "example.com"). */
@@ -45,23 +44,16 @@ export function hopLine(hops, reached = true) {
  *
  *   🐰 Route Hopper: example.com
  *   Score 87/100
- *   Guessed 5,000 km, actual 7,432 km
  *   🐇⬜🟪🟦🟦🟩🥕
  *
  * `trace` and `stats` are the normalized trace and its summary; `result` is the judged round (null or
- * unscoreable when there was nothing to guess, which shows the trip's facts instead of a score).
+ * unscoreable when there was nothing to guess, which shows the hop count instead of a score). Distances
+ * are never included: they would give away the answer.
  */
-export function tripSummary({ endpoint, trace, stats, result, unit = 'km' }) {
+export function tripSummary({ endpoint, trace, stats, result }) {
   const lines = [`🐰 Route Hopper: ${endpointLabel(endpoint)}`];
-  const hasDistance = stats.located >= 2 && stats.exactKm >= MIN_SCOREABLE_KM;
-  if (result?.status === 'scored') {
-    lines.push(`Score ${result.score}/100`);
-    lines.push(`Guessed ${formatDistance(result.guessKm, unit)}, actual ${formatDistance(stats.exactKm, unit)}`);
-  } else {
-    const facts = [`${stats.hops} ${stats.hops === 1 ? 'hop' : 'hops'}`];
-    if (hasDistance) facts.push(formatDistance(stats.exactKm, unit));
-    lines.push(facts.join(', '));
-  }
+  if (result?.status === 'scored') lines.push(`Score ${result.score}/100`);
+  else lines.push(`${stats.hops} ${stats.hops === 1 ? 'hop' : 'hops'}`);
   lines.push(hopLine(trace.hops, trace.reached !== false));
   return lines.join('\n');
 }
@@ -92,12 +84,15 @@ function copyBySelection(text, doc) {
 }
 
 /**
- * Shares `text` with the Web Share API where the browser has it, else copies it to the clipboard.
+ * Shares `text` followed by `url` with the Web Share API where the browser has it, else copies the same
+ * message to the clipboard. The link goes inside the text, not in the API's separate `url` or `title`
+ * fields, because many share targets keep only the link when given both and drop the card.
  * Resolves with 'shared', 'copied', 'cancelled' (the player closed the share sheet) or 'failed'
  * (nothing could be done: the caller should show the text to copy by hand).
  */
-export async function shareTrip({ title, text, url }, { nav = globalThis.navigator, doc = globalThis.document } = {}) {
-  const data = { title, text, ...(url ? { url } : {}) };
+export async function shareTrip({ text, url }, { nav = globalThis.navigator, doc = globalThis.document } = {}) {
+  const full = url ? `${text}\n${url}` : text;
+  const data = { text: full };
   if (nav?.share && (!nav.canShare || nav.canShare(data))) {
     try {
       await nav.share(data);
@@ -107,7 +102,6 @@ export async function shareTrip({ title, text, url }, { nav = globalThis.navigat
       // The browser refused to share (not allowed here, no targets): fall back to the clipboard.
     }
   }
-  const full = url ? `${text}\n${url}` : text;
   if (nav?.clipboard?.writeText) {
     try {
       await nav.clipboard.writeText(full);

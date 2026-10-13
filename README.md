@@ -55,22 +55,23 @@ A round is not scored, and says why, when:
 
 When a round is finished (scored, or too short to guess) a **Share trip** button appears next
 to **Play again**. It shares a short, game-style card in the spirit of daily puzzle games: the title, your
-score, your guess against the actual distance, and a line of emoji tiles for the route (a
+score, and a line of emoji tiles for the route (a
 bunny, one tile per hop coloured by network, a carrot at the end). For example:
 
 ```
 🐰 Route Hopper: example.com
 Score 90/100
-Guessed 8,000 km, actual 7,200 km
 🐇⬜🟪🟪🟦🟦🟦⬛🟩🟩🥕
 ```
 
 White tiles are your local network and black tiles are hops that did not reply. If there was
-nothing to guess, the second line shows the hop count and distance instead of a score.
+nothing to guess, the second line shows the hop count instead of a score. Distances are never
+shared, so the card does not give away the answer.
 
 The browser's share sheet is used where there is one (Web Share API, so phones and recent
 desktop browsers); otherwise the text is copied to the clipboard, and if even that is blocked it
-is shown for you to copy by hand. A link to the app is added unless it runs on `localhost`.
+is shown for you to copy by hand. A link to the app is added as the last line of the same text
+(unless it runs on `localhost`), so share targets that keep only a link never drop the card.
 The card is built in `frontend/src/lib/share.js`. It uses the destination you typed (host name
 only, never a path or query), never hop addresses or host names.
 

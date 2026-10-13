@@ -88,8 +88,8 @@ export default function App() {
   const status = !round ? 'ready' : hopping || (finished && !landed) ? 'running' : !finished ? 'incomplete' : (result?.status ?? 'guessing');
   // A finished round can be shared once it has its score, or when there is nothing to guess. The example is nobody's trip.
   const shareText = useMemo(
-    () => (!isExample && (status === 'scored' || status === 'unscoreable') ? tripSummary({ endpoint, trace, stats, result, unit }) : null),
-    [isExample, status, endpoint, trace, stats, result, unit],
+    () => (!isExample && (status === 'scored' || status === 'unscoreable') ? tripSummary({ endpoint, trace, stats, result }) : null),
+    [isExample, status, endpoint, trace, stats, result],
   );
   useEffect(() => {
     if (status === 'guessing') guessRef.current?.focus();
