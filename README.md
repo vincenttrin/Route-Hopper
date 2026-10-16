@@ -31,8 +31,7 @@ The **actual distance** is the sum of the great-circle distances between consecu
 that have a location, in order. Hops without a location (private addresses, no reply, no
 database entry) are skipped. The first 2 hops of every trace, which are the server's own
 local network, are removed by the backend before the browser gets the trace, so they are in
-none of this: not in the diagram, the map, the hop count, the distance or the share card
-(see `HIDDEN_HOPS` below).
+none of this: not in the diagram, the map, the hop count, the distance or the share card.
 
 The **score** is relative: the ratio of the smaller of your guess and the actual distance
 to the larger. A guess within 10 km of the actual distance (over or under, always measured in
@@ -153,7 +152,6 @@ show nothing past the container's gateway, and the UI warns about it. Use a Linu
 | `GEOIP_DIR` | the `geoip` named volume | Compose: volume or host directory mounted at `/data` |
 | `ALLOW_PRIVATE_TARGETS` | `false` | Allow tracing loopback/private addresses (local dev only) |
 | `MAX_CONCURRENT_TRACES` | `4` | Backend: traces running at once |
-| `HIDDEN_HOPS` | `2` | Backend: how many hops at the start of every trace are withheld from the browser, to keep the local network private (`0` shows every hop) |
 | `RATE_LIMIT_PER_MINUTE` | `20` | Backend: per client address, burst of 5 |
 
 The full list, API reference, and error codes are in [backend/README.md](backend/README.md).

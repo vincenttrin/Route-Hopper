@@ -30,7 +30,7 @@ type API struct {
 	AllowPrivate bool
 	// HiddenHops is how many hops at the start of every trace are withheld from
 	// clients: traces start on the server's own network, so those hops are its
-	// local network. Zero shows every hop. See visible.
+	// local network. See visible.
 	HiddenHops int
 	// slots bounds concurrent traces, which are expensive.
 	slots chan struct{}
@@ -75,7 +75,8 @@ type traceResponse struct {
 	Warning string `json:"warning,omitempty"`
 }
 
-// DefaultHiddenHops is how many hops the server withholds unless told otherwise.
+// DefaultHiddenHops is how many hops the server withholds. It is a fixed
+// value, not configuration: main applies it to every API it serves.
 const DefaultHiddenHops = 2
 
 // noRepliesWarning is shown when only the first hop answered. It is the

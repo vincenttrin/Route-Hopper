@@ -60,7 +60,7 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
   database, see [Geolocation database](#geolocation-database)). The frontend shows it
   above the results.
 
-- The first `HIDDEN_HOPS` hops (default 2) are never sent: a trace starts on the server's own
+- The first 2 hops are always hidden and never sent: a trace starts on the server's own
   network, so they are its local network, with private addresses. They are dropped on the
   server from both endpoints, and `hopNumber` counts from the first hop that is sent, so there
   is no gap. `reached` and `warning` describe the whole route but say nothing about the hidden
@@ -177,7 +177,6 @@ last-updated date; keep that credit if you redistribute the app.
 | `MAXMIND_LICENSE_KEY` | unset | Use MaxMind GeoLite2 instead of DB-IP Lite |
 | `ALLOW_PRIVATE_TARGETS` | `false` | Allow tracing loopback/private addresses (local dev only) |
 | `MAX_CONCURRENT_TRACES` | `4` | Traces running at once |
-| `HIDDEN_HOPS` | `2` | How many hops at the start of every trace are withheld from clients to keep the local network private; `0` shows every hop |
 | `RATE_LIMIT_PER_MINUTE` | `20` | Per client address, burst of 5 |
 
 The rate limiter keys on the connection's remote address, so behind a reverse proxy
@@ -200,7 +199,7 @@ environment to use GeoLite2, or `GEOIP_AUTO_UPDATE=false` to manage the files yo
 
 Docker Desktop on macOS and Windows runs containers behind a NAT that drops the
 "TTL exceeded" replies traceroute depends on, so traces from there show the container's
-gateway as the first hop (hidden by default, see `HIDDEN_HOPS`) and then no replies. The
+gateway as the first hop (always hidden) and then no replies. The
 backend detects this (no reply from any hop past the first) and returns a `warning`, which the UI shows as a banner and the server
 logs. Use a Linux host for real traces, or run the backend natively with
 `scripts/dev.sh` (see [Run](#run)). A firewall that drops all TTL-exceeded replies

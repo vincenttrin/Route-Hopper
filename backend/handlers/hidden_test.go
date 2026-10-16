@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tamtrinh/traffic-visualizer/backend/geo"
 	"github.com/tamtrinh/traffic-visualizer/backend/trace"
 )
 
@@ -188,13 +187,5 @@ func TestShortTraceHasAMessageNotAnEmptyResult(t *testing.T) {
 			body := strings.ReplaceAll(rec.Body.String(), tt.dest, "")
 			noSecrets(t, "stream", body)
 		})
-	}
-}
-
-func TestHiddenHopsCanBeDisabled(t *testing.T) {
-	api := NewAPI(&fakeTracer{hops: leakyRoute()}, fakeResolver{}, geo.Nop{}, 1)
-	got := decodeTrace(t, api, "93.184.216.34")
-	if len(got.Hops) != 5 || got.Hops[0].IP != "192.168.77.1" || got.Hops[0].HopNumber != 1 {
-		t.Errorf("hops = %+v", got.Hops)
 	}
 }

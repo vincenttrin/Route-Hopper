@@ -32,12 +32,3 @@ func TestFetchGeoIPKeepsExistingFiles(t *testing.T) {
 		t.Error("existing file was replaced")
 	}
 }
-
-func TestEnvCountAcceptsZero(t *testing.T) {
-	for val, want := range map[string]int{"": 2, "0": 0, "3": 3, "-1": 2, "x": 2} {
-		t.Setenv("HIDDEN_HOPS_TEST", val)
-		if got := envCount("HIDDEN_HOPS_TEST", 2); got != want {
-			t.Errorf("envCount(%q) = %d, want %d", val, got, want)
-		}
-	}
-}
