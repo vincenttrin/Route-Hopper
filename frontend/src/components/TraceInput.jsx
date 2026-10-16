@@ -18,7 +18,7 @@ export default function TraceInput({ initial, busy, endpointRef, onSubmit, onCan
         className="field-endpoint"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="example.com or 93.184.216.34"
+        placeholder="example.com or 203.0.113.10"
         autoComplete="off"
         spellCheck="false"
       />

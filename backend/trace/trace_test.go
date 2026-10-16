@@ -46,14 +46,14 @@ func TestTraceBuildsCommandAndResolvesNames(t *testing.T) {
 		gotName, gotArgs = name, args
 		return []byte(linuxOutput), nil
 	}))
-	hops, err := tr.Trace(context.Background(), netip.MustParseAddr("93.184.216.34"), 500)
+	hops, err := tr.Trace(context.Background(), netip.MustParseAddr("203.0.113.10"), 500)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if gotName != "traceroute" {
 		t.Errorf("binary = %q", gotName)
 	}
-	if want := "-n -m 64 -q 2 -w 1 93.184.216.34"; strings.Join(gotArgs, " ") != want {
+	if want := "-n -m 64 -q 2 -w 1 203.0.113.10"; strings.Join(gotArgs, " ") != want {
 		t.Errorf("args = %q, want %q", strings.Join(gotArgs, " "), want)
 	}
 	if len(hops) != 3 || hops[0].Hostname != "gw.example.net" || hops[1].Hostname != "" {
@@ -67,7 +67,7 @@ func TestTraceIPv6UsesTraceroute6(t *testing.T) {
 		gotName = name
 		return []byte(macOutput), nil
 	}))
-	if _, err := tr.Trace(context.Background(), netip.MustParseAddr("2606:4700::1111"), 0); err != nil {
+	if _, err := tr.Trace(context.Background(), netip.MustParseAddr("2001:db8::1111"), 0); err != nil {
 		t.Fatal(err)
 	}
 	if gotName != "traceroute6" {
@@ -76,7 +76,7 @@ func TestTraceIPv6UsesTraceroute6(t *testing.T) {
 }
 
 func TestTraceErrors(t *testing.T) {
-	ip := netip.MustParseAddr("1.1.1.1")
+	ip := netip.MustParseAddr("198.51.100.1")
 
 	missing := newTestTracer(bytesRunner(func(context.Context, string, ...string) ([]byte, error) {
 		return nil, &exec.Error{Name: "traceroute", Err: exec.ErrNotFound}
@@ -105,23 +105,23 @@ func TestTraceErrors(t *testing.T) {
 	}
 }
 
-// facebookUDP is what traceroute's default UDP probes see towards a host such as
-// facebook.com: the path answers, then the destination silently drops the probes.
-const facebookUDP = `traceroute to 57.144.20.1 (57.144.20.1), 30 hops max, 40 byte packets
+// dropUDP is what traceroute's default UDP probes see towards a host such as
+// www.example.com: the path answers, then the destination silently drops the probes.
+const dropUDP = `traceroute to 203.0.113.1 (203.0.113.1), 30 hops max, 40 byte packets
  1  192.168.1.1  4.3 ms  5.1 ms
- 2  96.34.20.4  15.2 ms  16.0 ms
- 3  157.240.69.22  88.4 ms  66.1 ms
+ 2  198.51.100.4  15.2 ms  16.0 ms
+ 3  203.0.113.22  88.4 ms  66.1 ms
  4  * *
  5  * *
  6  * *
 `
 
-// facebookICMP is the same path probed with ICMP echo, which the host answers.
-const facebookICMP = `traceroute to 57.144.20.1 (57.144.20.1), 30 hops max, 48 byte packets
+// dropICMP is the same path probed with ICMP echo, which the host answers.
+const dropICMP = `traceroute to 203.0.113.1 (203.0.113.1), 30 hops max, 48 byte packets
  1  192.168.1.1  4.4 ms  12.4 ms
- 2  96.34.20.4  15.3 ms  54.0 ms
- 3  157.240.69.22  88.4 ms  66.1 ms
- 4  57.144.20.1  68.6 ms  159.8 ms
+ 2  198.51.100.4  15.3 ms  54.0 ms
+ 3  203.0.113.22  88.4 ms  66.1 ms
+ 4  203.0.113.1  68.6 ms  159.8 ms
 `
 
 // probeRunner answers UDP and ICMP (-I) traceroute runs separately and records
@@ -139,8 +139,8 @@ func probeRunner(udp, icmp []byte, icmpErr error, calls *[]string) Runner {
 
 func TestTraceFallsBackToICMPWhenDestinationIgnoresUDP(t *testing.T) {
 	var calls []string
-	tr := newTestTracer(probeRunner([]byte(facebookUDP), []byte(facebookICMP), nil, &calls))
-	dest := netip.MustParseAddr("57.144.20.1")
+	tr := newTestTracer(probeRunner([]byte(dropUDP), []byte(dropICMP), nil, &calls))
+	dest := netip.MustParseAddr("203.0.113.1")
 	hops, err := tr.Trace(context.Background(), dest, 30)
 	if err != nil {
 		t.Fatal(err)
@@ -156,13 +156,13 @@ func TestTraceFallsBackToICMPWhenDestinationIgnoresUDP(t *testing.T) {
 func TestTraceICMPPassRunsAfterUDPUsesWholeBudget(t *testing.T) {
 	tr := newTestTracer(bytesRunner(func(ctx context.Context, _ string, args ...string) ([]byte, error) {
 		if args[0] == "-I" {
-			return []byte(facebookICMP), nil
+			return []byte(dropICMP), nil
 		}
 		<-ctx.Done()
-		return []byte(facebookUDP), ctx.Err()
+		return []byte(dropUDP), ctx.Err()
 	}))
 	tr.Timeout = 20 * time.Millisecond
-	dest := netip.MustParseAddr("57.144.20.1")
+	dest := netip.MustParseAddr("203.0.113.1")
 	hops, err := tr.Trace(context.Background(), dest, 30)
 	if err != nil {
 		t.Fatal(err)
@@ -177,22 +177,22 @@ func TestTraceICMPPassUsesICMPFlag(t *testing.T) {
 	tr := newTestTracer(bytesRunner(func(_ context.Context, _ string, args ...string) ([]byte, error) {
 		if args[0] == "-I" {
 			icmpArgs = strings.Join(args, " ")
-			return []byte(facebookICMP), nil
+			return []byte(dropICMP), nil
 		}
-		return []byte(facebookUDP), nil
+		return []byte(dropUDP), nil
 	}))
-	if _, err := tr.Trace(context.Background(), netip.MustParseAddr("57.144.20.1"), 30); err != nil {
+	if _, err := tr.Trace(context.Background(), netip.MustParseAddr("203.0.113.1"), 30); err != nil {
 		t.Fatal(err)
 	}
-	if want := "-I -n -m 30 -q 2 -w 1 57.144.20.1"; icmpArgs != want {
+	if want := "-I -n -m 30 -q 2 -w 1 203.0.113.1"; icmpArgs != want {
 		t.Errorf("icmp args = %q, want %q", icmpArgs, want)
 	}
 }
 
 func TestTraceSkipsICMPWhenUDPReachesDestination(t *testing.T) {
 	var calls []string
-	tr := newTestTracer(probeRunner([]byte(linuxOutput), []byte(facebookICMP), nil, &calls))
-	if _, err := tr.Trace(context.Background(), netip.MustParseAddr("93.184.216.34"), 30); err != nil {
+	tr := newTestTracer(probeRunner([]byte(linuxOutput), []byte(dropICMP), nil, &calls))
+	if _, err := tr.Trace(context.Background(), netip.MustParseAddr("203.0.113.10"), 30); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(calls, ",") != "udp" {
@@ -201,7 +201,7 @@ func TestTraceSkipsICMPWhenUDPReachesDestination(t *testing.T) {
 }
 
 func TestTraceKeepsUDPResultWhenICMPDoesNotHelp(t *testing.T) {
-	dest := netip.MustParseAddr("57.144.20.1")
+	dest := netip.MustParseAddr("203.0.113.1")
 	tests := []struct {
 		name string
 		icmp []byte
@@ -209,12 +209,12 @@ func TestTraceKeepsUDPResultWhenICMPDoesNotHelp(t *testing.T) {
 	}{
 		// Without CAP_NET_RAW traceroute -I exits straight away with nothing.
 		{"icmp not permitted", nil, errors.New("exit status 1")},
-		{"destination ignores icmp too", []byte(facebookUDP), nil},
+		{"destination ignores icmp too", []byte(dropUDP), nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls []string
-			tr := newTestTracer(probeRunner([]byte(facebookUDP), tt.icmp, tt.err, &calls))
+			tr := newTestTracer(probeRunner([]byte(dropUDP), tt.icmp, tt.err, &calls))
 			hops, err := tr.Trace(context.Background(), dest, 30)
 			if err != nil {
 				t.Fatal(err)
@@ -230,7 +230,7 @@ func TestTraceKeepsUDPResultWhenICMPDoesNotHelp(t *testing.T) {
 }
 
 func TestReached(t *testing.T) {
-	dest := netip.MustParseAddr("57.144.20.1")
+	dest := netip.MustParseAddr("203.0.113.1")
 	tests := []struct {
 		name string
 		hops []Hop
@@ -239,7 +239,7 @@ func TestReached(t *testing.T) {
 		{"no hops", nil, false},
 		{"destination answered", []Hop{{Number: 1, IP: netip.MustParseAddr("192.168.1.1")}, {Number: 2, IP: dest}}, true},
 		{"path answered, destination silent", []Hop{{Number: 1, IP: netip.MustParseAddr("192.168.1.1")}, {Number: 2}}, false},
-		{"ipv4-mapped destination", []Hop{{Number: 1, IP: netip.MustParseAddr("::ffff:57.144.20.1")}}, true},
+		{"ipv4-mapped destination", []Hop{{Number: 1, IP: netip.MustParseAddr("::ffff:203.0.113.1")}}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -290,11 +290,11 @@ func TestNewTracerGivesICMPPassABudget(t *testing.T) {
 				t.Error("ICMP pass has no deadline")
 			}
 			icmpDeadline = time.Until(dl)
-			return []byte(facebookICMP), nil
+			return []byte(dropICMP), nil
 		}
-		return []byte(facebookUDP), nil
+		return []byte(dropUDP), nil
 	})
-	dest := netip.MustParseAddr("57.144.20.1")
+	dest := netip.MustParseAddr("203.0.113.1")
 	hops, err := tr.Trace(context.Background(), dest, 30)
 	if err != nil || !Reached(hops, dest) {
 		t.Fatalf("hops = %+v, err = %v", hops, err)
@@ -322,16 +322,16 @@ func TestStreamEmitsEachHopWhileTracerouteIsStillRunning(t *testing.T) {
 	released := make(chan struct{})
 	got := make(chan Hop, 8)
 	tr := newTestTracer(func(ctx context.Context, _ string, _ []string, onLine func(string)) error {
-		onLine("traceroute to 93.184.216.34, 30 hops max")
+		onLine("traceroute to 203.0.113.10, 30 hops max")
 		onLine(" 1  10.0.0.1  1.0 ms  2.0 ms")
 		<-released // the first hop must arrive before the process prints more
 		onLine(" 2  * *")
-		onLine(" 3  93.184.216.34  9.0 ms  9.0 ms")
+		onLine(" 3  203.0.113.10  9.0 ms  9.0 ms")
 		return nil
 	})
 	done := make(chan error, 1)
 	go func() {
-		_, err := tr.Stream(context.Background(), netip.MustParseAddr("93.184.216.34"), 30, Sink{Hop: func(h Hop) { got <- h }})
+		_, err := tr.Stream(context.Background(), netip.MustParseAddr("203.0.113.10"), 30, Sink{Hop: func(h Hop) { got <- h }})
 		done <- err
 	}()
 	select {
@@ -367,7 +367,7 @@ func TestStreamKeepsHopOrderWhenReverseLookupsFinishOutOfOrder(t *testing.T) {
 		return []string{"h-" + ip + "."}, nil
 	}
 	var seen []string
-	hops, err := tr.Stream(context.Background(), netip.MustParseAddr("93.184.216.34"), 30, Sink{
+	hops, err := tr.Stream(context.Background(), netip.MustParseAddr("203.0.113.10"), 30, Sink{
 		Hop: func(h Hop) { seen = append(seen, h.Hostname) },
 	})
 	if err != nil {
@@ -383,11 +383,11 @@ func TestStreamAnnouncesICMPRetryAndReplacesHops(t *testing.T) {
 	var events []string
 	tr := newTestTracer(bytesRunner(func(_ context.Context, _ string, args ...string) ([]byte, error) {
 		if args[0] == "-I" {
-			return []byte(facebookICMP), nil
+			return []byte(dropICMP), nil
 		}
-		return []byte(facebookUDP), nil
+		return []byte(dropUDP), nil
 	}))
-	dest := netip.MustParseAddr("57.144.20.1")
+	dest := netip.MustParseAddr("203.0.113.1")
 	hops, err := tr.Stream(context.Background(), dest, 30, Sink{
 		Hop:   func(h Hop) { events = append(events, "hop"+strconv.Itoa(h.Number)) },
 		Phase: func(p Phase) { events = append(events, string(p)) },
@@ -410,8 +410,8 @@ func TestStreamAnnouncesICMPRetryAndReplacesHops(t *testing.T) {
 func TestStreamDoesNotResetWhenICMPDoesNotHelp(t *testing.T) {
 	var events []string
 	var calls []string
-	tr := newTestTracer(probeRunner([]byte(facebookUDP), nil, errors.New("exit status 1"), &calls))
-	hops, err := tr.Stream(context.Background(), netip.MustParseAddr("57.144.20.1"), 30, Sink{
+	tr := newTestTracer(probeRunner([]byte(dropUDP), nil, errors.New("exit status 1"), &calls))
+	hops, err := tr.Stream(context.Background(), netip.MustParseAddr("203.0.113.1"), 30, Sink{
 		Hop:   func(h Hop) { events = append(events, "hop") },
 		Phase: func(p Phase) { events = append(events, string(p)) },
 		Reset: func() { events = append(events, "reset") },
@@ -429,7 +429,7 @@ func TestStreamSkipsICMPPhaseWhenUDPReachesDestination(t *testing.T) {
 	tr := newTestTracer(bytesRunner(func(context.Context, string, ...string) ([]byte, error) {
 		return []byte(linuxOutput), nil
 	}))
-	_, err := tr.Stream(context.Background(), netip.MustParseAddr("93.184.216.34"), 30, Sink{Phase: func(Phase) { phases++ }})
+	_, err := tr.Stream(context.Background(), netip.MustParseAddr("203.0.113.10"), 30, Sink{Phase: func(Phase) { phases++ }})
 	if err != nil || phases != 0 {
 		t.Errorf("phases = %d, err = %v", phases, err)
 	}
@@ -445,7 +445,7 @@ func TestStreamCancelledByClientStopsWithoutICMPRetry(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	})
-	hops, err := tr.Stream(ctx, netip.MustParseAddr("57.144.20.1"), 30, Sink{})
+	hops, err := tr.Stream(ctx, netip.MustParseAddr("203.0.113.1"), 30, Sink{})
 	if err != nil || len(hops) != 1 {
 		t.Errorf("hops = %+v, err = %v", hops, err)
 	}

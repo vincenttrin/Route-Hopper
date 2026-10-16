@@ -71,7 +71,7 @@ traffic-visualizer/
 ### Initial Setup
 ```bash
 # Clone and navigate
-cd /Users/tamyboi/Projects/traffic-visualizer
+cd Route-Hopper
 
 # Install frontend dependencies
 cd frontend && npm install && cd ..

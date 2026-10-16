@@ -37,13 +37,13 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
 ```json
 {
   "hops": [
-    { "hopNumber": 1, "ip": "68.1.4.1", "hostname": "", "city": "Omaha", "country": "US",
-      "org": "Cox", "lat": 41.25, "lng": -95.94, "rtt": 3.1 },
+    { "hopNumber": 1, "ip": "192.0.2.1", "hostname": "", "city": "Omaha", "country": "US",
+      "org": "Example Telecom", "lat": 41.25, "lng": -95.94, "rtt": 3.1 },
     { "hopNumber": 2, "ip": "", "hostname": "", "lat": 0, "lng": 0, "rtt": 0 },
-    { "hopNumber": 3, "ip": "1.0.0.1", "hostname": "one.one.one.one", "city": "Sydney",
-      "country": "AU", "org": "Cloudflare", "lat": -33.86, "lng": 151.2, "rtt": 25.8 }
+    { "hopNumber": 3, "ip": "203.0.113.10", "hostname": "host.example.com", "city": "Sydney",
+      "country": "AU", "org": "Example CDN", "lat": -33.86, "lng": 151.2, "rtt": 25.8 }
   ],
-  "destination": { "ip": "1.0.0.1", "city": "Sydney", "lat": -33.86, "lng": 151.2 },
+  "destination": { "ip": "203.0.113.10", "city": "Sydney", "lat": -33.86, "lng": 151.2 },
   "reached": true
 }
 ```
@@ -52,7 +52,7 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
   hops are `ip: ""`. That is not an error: many hosts and firewalls drop traceroute
   probes. The trace first uses the default UDP probes; if the destination does not
   answer, it runs once more with ICMP echo (`traceroute -I`), which hosts such as
-  facebook.com answer, and keeps that result if it got through. ICMP needs
+  www.example.com answer, and keeps that result if it got through. ICMP needs
   `CAP_NET_RAW` on Linux (macOS allows it unprivileged); without it the UDP result stands.
 - `warning` (optional string) is present when the trace is probably incomplete or
   cannot be drawn: at least three hops were traced and none past the first replied (see

@@ -20,7 +20,7 @@ var (
 var hostLabel = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 
 // ParseEndpoint turns user input such as "example.com", "https://example.com/a?b"
-// or "1.2.3.4:443" into a bare host name or IP address. The result never starts
+// or "192.0.2.4:443" into a bare host name or IP address. The result never starts
 // with "-", so it is safe to pass as a command argument.
 func ParseEndpoint(s string) (string, error) {
 	s = strings.TrimSpace(s)

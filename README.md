@@ -171,3 +171,7 @@ frontend/           React app (src/components, src/lib, src/services)
 docker-compose.yml  Frontend (nginx) and backend services
 CLAUDE.md           Notes for AI coding agents
 ```
+
+## License
+
+[MIT](LICENSE)

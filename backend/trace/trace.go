@@ -99,7 +99,7 @@ func (t *Tracer) Trace(ctx context.Context, ip netip.Addr, maxHops int) ([]Hop, 
 
 // Stream runs traceroute towards ip, handing each hop to sink as traceroute
 // prints it. If the destination does not answer the default UDP probes, the
-// route is probed again with ICMP echo, which hosts such as facebook.com
+// route is probed again with ICMP echo, which hosts such as www.example.com
 // answer. If the time limit is hit, the hops seen so far are returned rather
 // than an error. It returns the hops that stand at the end, which are the ones
 // the sink last saw.

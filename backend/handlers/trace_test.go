@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tamtrinh/traffic-visualizer/backend/geo"
-	"github.com/tamtrinh/traffic-visualizer/backend/trace"
+	"github.com/vincenttrin/Route-Hopper/backend/geo"
+	"github.com/vincenttrin/Route-Hopper/backend/trace"
 )
 
 type fakeTracer struct {
@@ -82,19 +82,19 @@ func TestTraceResponseShape(t *testing.T) {
 	tracer := &fakeTracer{hops: []trace.Hop{
 		{Number: 1, IP: addr("192.168.1.1"), Hostname: "gateway.lan", RTT: 1.5},
 		{Number: 2},
-		{Number: 3, IP: addr("93.184.216.34"), Hostname: "example.com", RTT: 12},
+		{Number: 3, IP: addr("203.0.113.10"), Hostname: "example.com", RTT: 12},
 	}}
 	g := fakeGeo{
-		addr("93.184.216.34"): {Lat: 52.37, Lng: 4.9, City: "Amsterdam", Country: "NL", Org: "Edgecast"},
-		addr("192.168.1.1"):   {Lat: 1, Lng: 1, City: "must not be used for private IPs"},
+		addr("203.0.113.10"): {Lat: 52.37, Lng: 4.9, City: "Amsterdam", Country: "NL", Org: "Example CDN"},
+		addr("192.168.1.1"):  {Lat: 1, Lng: 1, City: "must not be used for private IPs"},
 	}
-	api := NewAPI(tracer, fakeResolver{"example.com": addr("93.184.216.34")}, g, 2)
+	api := NewAPI(tracer, fakeResolver{"example.com": addr("203.0.113.10")}, g, 2)
 
 	rec := post(api, `{"endpoint":"https://example.com/path","maxHops":12}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}
-	if tracer.got != addr("93.184.216.34") || tracer.max != 12 {
+	if tracer.got != addr("203.0.113.10") || tracer.max != 12 {
 		t.Errorf("tracer called with %v, %d", tracer.got, tracer.max)
 	}
 	var got traceResponse
@@ -104,7 +104,7 @@ func TestTraceResponseShape(t *testing.T) {
 	want := []hopJSON{
 		{HopNumber: 1, IP: "192.168.1.1", Hostname: "gateway.lan", RTT: 1.5},
 		{HopNumber: 2},
-		{HopNumber: 3, IP: "93.184.216.34", Hostname: "example.com", City: "Amsterdam", Country: "NL", Org: "Edgecast", Lat: 52.37, Lng: 4.9, RTT: 12},
+		{HopNumber: 3, IP: "203.0.113.10", Hostname: "example.com", City: "Amsterdam", Country: "NL", Org: "Example CDN", Lat: 52.37, Lng: 4.9, RTT: 12},
 	}
 	if len(got.Hops) != len(want) {
 		t.Fatalf("hops = %+v", got.Hops)
@@ -114,7 +114,7 @@ func TestTraceResponseShape(t *testing.T) {
 			t.Errorf("hop %d = %+v, want %+v", i+1, got.Hops[i], want[i])
 		}
 	}
-	if d := got.Destination; d.IP != "93.184.216.34" || d.Lat != 52.37 || d.Lng != 4.9 || d.City != "Amsterdam" {
+	if d := got.Destination; d.IP != "203.0.113.10" || d.Lat != 52.37 || d.Lng != 4.9 || d.City != "Amsterdam" {
 		t.Errorf("destination = %+v", d)
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
@@ -124,7 +124,7 @@ func TestTraceResponseShape(t *testing.T) {
 
 func TestTraceWarnsWhenNoRepliesBeyondFirstHop(t *testing.T) {
 	dockerLike := []trace.Hop{{Number: 1, IP: addr("172.21.0.1"), RTT: 0.1}, {Number: 2}, {Number: 3}, {Number: 4}}
-	healthy := []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("93.184.216.34")}, {Number: 3, IP: addr("93.184.216.35")}}
+	healthy := []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("203.0.113.10")}, {Number: 3, IP: addr("203.0.113.11")}}
 	tests := []struct {
 		name     string
 		hops     []trace.Hop
@@ -135,9 +135,9 @@ func TestTraceWarnsWhenNoRepliesBeyondFirstHop(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := fakeGeo{addr("93.184.216.34"): {Lat: 52.37, Lng: 4.9, City: "Amsterdam"}}
+			g := fakeGeo{addr("203.0.113.10"): {Lat: 52.37, Lng: 4.9, City: "Amsterdam"}}
 			api := NewAPI(&fakeTracer{hops: tt.hops}, fakeResolver{}, g, 1)
-			rec := post(api, `{"endpoint":"8.8.8.8"}`)
+			rec := post(api, `{"endpoint":"203.0.113.53"}`)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status %d: %s", rec.Code, rec.Body)
 			}
@@ -173,21 +173,21 @@ func decodeTrace(t *testing.T, api *API, endpoint string) traceResponse {
 }
 
 func TestTraceReportsWhetherDestinationReplied(t *testing.T) {
-	path := []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("96.34.20.4")}, {Number: 3, IP: addr("157.240.69.22")}}
+	path := []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("198.51.100.4")}, {Number: 3, IP: addr("203.0.113.22")}}
 	tests := []struct {
 		name string
 		hops []trace.Hop
 		want bool
 	}{
-		{"destination answered", append(path[:3:3], trace.Hop{Number: 4, IP: addr("57.144.20.1")}), true},
-		// facebook.com: the path answers, then silence up to the hop limit.
+		{"destination answered", append(path[:3:3], trace.Hop{Number: 4, IP: addr("203.0.113.1")}), true},
+		// www.example.com: the path answers, then silence up to the hop limit.
 		{"destination silent", append(path[:3:3], trace.Hop{Number: 4}, trace.Hop{Number: 5}), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := fakeGeo{addr("96.34.20.4"): {Lat: 42.5, Lng: -89, City: "Beloit"}}
+			g := fakeGeo{addr("198.51.100.4"): {Lat: 42.5, Lng: -89, City: "Springfield"}}
 			api := NewAPI(&fakeTracer{hops: tt.hops}, fakeResolver{}, g, 1)
-			got := decodeTrace(t, api, "57.144.20.1")
+			got := decodeTrace(t, api, "203.0.113.1")
 			if got.Reached != tt.want {
 				t.Errorf("reached = %v, want %v", got.Reached, tt.want)
 			}
@@ -199,8 +199,8 @@ func TestTraceReportsWhetherDestinationReplied(t *testing.T) {
 }
 
 func TestTraceWarnsWhenNothingCanBeLocated(t *testing.T) {
-	hops := []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("96.34.20.4")}, {Number: 3, IP: addr("93.184.216.34")}}
-	located := fakeGeo{addr("96.34.20.4"): {Lat: 42.5, Lng: -89, City: "Beloit"}}
+	hops := []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("198.51.100.4")}, {Number: 3, IP: addr("203.0.113.10")}}
+	located := fakeGeo{addr("198.51.100.4"): {Lat: 42.5, Lng: -89, City: "Springfield"}}
 	tests := []struct {
 		name     string
 		geo      geo.Locator
@@ -215,7 +215,7 @@ func TestTraceWarnsWhenNothingCanBeLocated(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			api := NewAPI(&fakeTracer{hops: tt.hops}, fakeResolver{}, tt.geo, 1)
-			got := decodeTrace(t, api, "93.184.216.34")
+			got := decodeTrace(t, api, "203.0.113.10")
 			if tt.wantWarn {
 				if !strings.Contains(got.Warning, "GeoIP") || !strings.Contains(got.Warning, "fetch-geoip.sh") {
 					t.Errorf("warning = %q", got.Warning)
@@ -229,7 +229,7 @@ func TestTraceWarnsWhenNothingCanBeLocated(t *testing.T) {
 
 func TestTraceEmptyHopsEncodesAsArray(t *testing.T) {
 	api := NewAPI(&fakeTracer{}, fakeResolver{}, geo.Nop{}, 1)
-	rec := post(api, `{"endpoint":"8.8.8.8"}`)
+	rec := post(api, `{"endpoint":"203.0.113.53"}`)
 	if !strings.Contains(rec.Body.String(), `"hops":[]`) {
 		t.Errorf("body = %s", rec.Body)
 	}
@@ -245,12 +245,12 @@ func TestTraceErrors(t *testing.T) {
 		{"bad json", `nope`, nil, http.StatusBadRequest},
 		{"empty endpoint", `{"endpoint":""}`, nil, http.StatusBadRequest},
 		{"flag injection", `{"endpoint":"-m 1"}`, nil, http.StatusBadRequest},
-		{"negative hops", `{"endpoint":"8.8.8.8","maxHops":-1}`, nil, http.StatusBadRequest},
-		{"too many hops", `{"endpoint":"8.8.8.8","maxHops":65}`, nil, http.StatusBadRequest},
+		{"negative hops", `{"endpoint":"203.0.113.53","maxHops":-1}`, nil, http.StatusBadRequest},
+		{"too many hops", `{"endpoint":"203.0.113.53","maxHops":65}`, nil, http.StatusBadRequest},
 		{"unresolvable", `{"endpoint":"nope.invalid"}`, nil, http.StatusUnprocessableEntity},
 		{"private target", `{"endpoint":"10.0.0.1"}`, nil, http.StatusForbidden},
-		{"timeout", `{"endpoint":"8.8.8.8"}`, context.DeadlineExceeded, http.StatusGatewayTimeout},
-		{"tool failure", `{"endpoint":"8.8.8.8"}`, errors.New("boom"), http.StatusInternalServerError},
+		{"timeout", `{"endpoint":"203.0.113.53"}`, context.DeadlineExceeded, http.StatusGatewayTimeout},
+		{"tool failure", `{"endpoint":"203.0.113.53"}`, errors.New("boom"), http.StatusInternalServerError},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -273,7 +273,7 @@ func TestTraceAllowPrivate(t *testing.T) {
 func TestTraceSaturated(t *testing.T) {
 	api := NewAPI(&fakeTracer{}, fakeResolver{}, geo.Nop{}, 1)
 	api.slots <- struct{}{}
-	if rec := post(api, `{"endpoint":"8.8.8.8"}`); rec.Code != http.StatusServiceUnavailable {
+	if rec := post(api, `{"endpoint":"203.0.113.53"}`); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status %d", rec.Code)
 	}
 }
@@ -283,7 +283,7 @@ func TestRateLimit(t *testing.T) {
 	codes := []int{}
 	for range 3 {
 		req := httptest.NewRequest(http.MethodPost, "/", nil)
-		req.RemoteAddr = "1.2.3.4:5555"
+		req.RemoteAddr = "192.0.2.4:5555"
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 		codes = append(codes, rec.Code)
@@ -292,7 +292,7 @@ func TestRateLimit(t *testing.T) {
 		t.Errorf("codes = %v", codes)
 	}
 	other := httptest.NewRequest(http.MethodPost, "/", nil)
-	other.RemoteAddr = "5.6.7.8:1"
+	other.RemoteAddr = "198.51.100.8:1"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, other)
 	if rec.Code != 200 {
@@ -336,10 +336,10 @@ func TestTraceStreamEmitsStartHopsAndDone(t *testing.T) {
 	tracer := &fakeTracer{hops: []trace.Hop{
 		{Number: 1, IP: addr("192.168.1.1"), Hostname: "gateway.lan", RTT: 1.5},
 		{Number: 2},
-		{Number: 3, IP: addr("93.184.216.34"), Hostname: "example.com", RTT: 12},
+		{Number: 3, IP: addr("203.0.113.10"), Hostname: "example.com", RTT: 12},
 	}}
-	g := fakeGeo{addr("93.184.216.34"): {Lat: 52.37, Lng: 4.9, City: "Amsterdam", Country: "NL", Org: "Edgecast"}}
-	api := NewAPI(tracer, fakeResolver{"example.com": addr("93.184.216.34")}, g, 2)
+	g := fakeGeo{addr("203.0.113.10"): {Lat: 52.37, Lng: 4.9, City: "Amsterdam", Country: "NL", Org: "Example CDN"}}
+	api := NewAPI(tracer, fakeResolver{"example.com": addr("203.0.113.10")}, g, 2)
 
 	rec := postStream(api, `{"endpoint":"example.com","maxHops":12}`)
 	if rec.Code != http.StatusOK {
@@ -354,17 +354,17 @@ func TestTraceStreamEmitsStartHopsAndDone(t *testing.T) {
 	if !rec.Flushed {
 		t.Error("response was never flushed")
 	}
-	if tracer.got != addr("93.184.216.34") || tracer.max != 12 {
+	if tracer.got != addr("203.0.113.10") || tracer.max != 12 {
 		t.Errorf("tracer called with %v, %d", tracer.got, tracer.max)
 	}
 	events := decodeEvents(t, rec.Body.String())
 	if got := eventTypes(events); got != "start hop hop hop done" {
 		t.Fatalf("events = %s", got)
 	}
-	if d := events[0].Destination; d == nil || d.IP != "93.184.216.34" || d.City != "Amsterdam" || d.Lat != 52.37 {
+	if d := events[0].Destination; d == nil || d.IP != "203.0.113.10" || d.City != "Amsterdam" || d.Lat != 52.37 {
 		t.Errorf("start destination = %+v", d)
 	}
-	want := hopJSON{HopNumber: 3, IP: "93.184.216.34", Hostname: "example.com", City: "Amsterdam", Country: "NL", Org: "Edgecast", Lat: 52.37, Lng: 4.9, RTT: 12}
+	want := hopJSON{HopNumber: 3, IP: "203.0.113.10", Hostname: "example.com", City: "Amsterdam", Country: "NL", Org: "Example CDN", Lat: 52.37, Lng: 4.9, RTT: 12}
 	if *events[3].Hop != want {
 		t.Errorf("hop 3 = %+v, want %+v", *events[3].Hop, want)
 	}
@@ -372,7 +372,7 @@ func TestTraceStreamEmitsStartHopsAndDone(t *testing.T) {
 		t.Errorf("private hop must not be located: %+v", h)
 	}
 	done := events[4]
-	if done.Reached == nil || !*done.Reached || done.Warning != "" || done.Destination.IP != "93.184.216.34" {
+	if done.Reached == nil || !*done.Reached || done.Warning != "" || done.Destination.IP != "203.0.113.10" {
 		t.Errorf("done = %+v", done)
 	}
 }
@@ -380,13 +380,13 @@ func TestTraceStreamEmitsStartHopsAndDone(t *testing.T) {
 func TestTraceStreamFlushesEachHopBeforeTheTraceEnds(t *testing.T) {
 	var linesWhileRunning []int
 	var api *API
-	tracer := &fakeTracer{hops: []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("96.34.20.4")}}}
+	tracer := &fakeTracer{hops: []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("198.51.100.4")}}}
 	rec := httptest.NewRecorder()
 	tracer.after = func(i int) {
 		linesWhileRunning = append(linesWhileRunning, strings.Count(rec.Body.String(), "\n"))
 	}
 	api = NewAPI(tracer, fakeResolver{}, geo.Nop{}, 1)
-	req := httptest.NewRequest(http.MethodPost, "/api/trace/stream", strings.NewReader(`{"endpoint":"8.8.8.8"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/trace/stream", strings.NewReader(`{"endpoint":"203.0.113.53"}`))
 	api.TraceStream(rec, req)
 	// start + hop 1 are already written when hop 1 is reported; then hop 2 too.
 	if len(linesWhileRunning) != 2 || linesWhileRunning[0] != 2 || linesWhileRunning[1] != 3 {
@@ -405,7 +405,7 @@ func TestTraceStreamForwardsICMPRetryEvents(t *testing.T) {
 		},
 	}
 	api := NewAPI(tracer, fakeResolver{}, geo.Nop{}, 1)
-	events := decodeEvents(t, postStream(api, `{"endpoint":"57.144.20.1"}`).Body.String())
+	events := decodeEvents(t, postStream(api, `{"endpoint":"203.0.113.1"}`).Body.String())
 	if got := eventTypes(events); got != "start hop hop phase reset hop done" {
 		t.Fatalf("events = %s", got)
 	}
@@ -420,15 +420,15 @@ func TestTraceStreamForwardsICMPRetryEvents(t *testing.T) {
 func TestTraceStreamDoneCarriesWarnings(t *testing.T) {
 	dockerLike := []trace.Hop{{Number: 1, IP: addr("172.21.0.1")}, {Number: 2}, {Number: 3}, {Number: 4}}
 	api := NewAPI(&fakeTracer{hops: dockerLike}, fakeResolver{}, geo.Nop{}, 1)
-	events := decodeEvents(t, postStream(api, `{"endpoint":"8.8.8.8"}`).Body.String())
+	events := decodeEvents(t, postStream(api, `{"endpoint":"203.0.113.53"}`).Body.String())
 	done := events[len(events)-1]
 	if done.Type != "done" || !strings.Contains(done.Warning, "Docker Desktop") {
 		t.Errorf("done = %+v", done)
 	}
 
-	public := []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("96.34.20.4")}, {Number: 3, IP: addr("93.184.216.34")}}
+	public := []trace.Hop{{Number: 1, IP: addr("192.168.1.1")}, {Number: 2, IP: addr("198.51.100.4")}, {Number: 3, IP: addr("203.0.113.10")}}
 	api = NewAPI(&fakeTracer{hops: public}, fakeResolver{}, geo.Nop{}, 1)
-	events = decodeEvents(t, postStream(api, `{"endpoint":"93.184.216.34"}`).Body.String())
+	events = decodeEvents(t, postStream(api, `{"endpoint":"203.0.113.10"}`).Body.String())
 	if w := events[len(events)-1].Warning; !strings.Contains(w, "fetch-geoip.sh") {
 		t.Errorf("warning = %q", w)
 	}
@@ -442,7 +442,7 @@ func TestTraceStreamErrorBeforeStreamingIsHTTPError(t *testing.T) {
 	}{
 		{"bad json", `nope`, http.StatusBadRequest},
 		{"flag injection", `{"endpoint":"-m 1"}`, http.StatusBadRequest},
-		{"too many hops", `{"endpoint":"8.8.8.8","maxHops":65}`, http.StatusBadRequest},
+		{"too many hops", `{"endpoint":"203.0.113.53","maxHops":65}`, http.StatusBadRequest},
 		{"unresolvable", `{"endpoint":"nope.invalid"}`, http.StatusUnprocessableEntity},
 		{"private target", `{"endpoint":"10.0.0.1"}`, http.StatusForbidden},
 	}
@@ -467,7 +467,7 @@ func TestTraceStreamErrorBeforeStreamingIsHTTPError(t *testing.T) {
 func TestTraceStreamSaturated(t *testing.T) {
 	api := NewAPI(&fakeTracer{}, fakeResolver{}, geo.Nop{}, 1)
 	api.slots <- struct{}{}
-	if rec := postStream(api, `{"endpoint":"8.8.8.8"}`); rec.Code != http.StatusServiceUnavailable {
+	if rec := postStream(api, `{"endpoint":"203.0.113.53"}`); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status %d", rec.Code)
 	}
 }
@@ -475,7 +475,7 @@ func TestTraceStreamSaturated(t *testing.T) {
 func TestTraceStreamReleasesSlotWhenDone(t *testing.T) {
 	api := NewAPI(&fakeTracer{}, fakeResolver{}, geo.Nop{}, 1)
 	for range 2 {
-		if rec := postStream(api, `{"endpoint":"8.8.8.8"}`); rec.Code != http.StatusOK {
+		if rec := postStream(api, `{"endpoint":"203.0.113.53"}`); rec.Code != http.StatusOK {
 			t.Fatalf("status %d", rec.Code)
 		}
 	}
@@ -495,7 +495,7 @@ func TestTraceStreamErrorAfterHopsIsAnEvent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tracer := &fakeTracer{err: tt.err, pre: func(s trace.Sink) { s.Hop(trace.Hop{Number: 1, IP: addr("192.168.1.1")}) }}
 			api := NewAPI(tracer, fakeResolver{}, geo.Nop{}, 1)
-			rec := postStream(api, `{"endpoint":"8.8.8.8"}`)
+			rec := postStream(api, `{"endpoint":"203.0.113.53"}`)
 			events := decodeEvents(t, rec.Body.String())
 			if got := eventTypes(events); got != "start hop error" {
 				t.Fatalf("events = %s", got)
@@ -515,7 +515,7 @@ func TestTraceStreamStopsTracerWhenClientDisconnects(t *testing.T) {
 	api := NewAPI(tracer, fakeResolver{}, geo.Nop{}, 1)
 
 	finished := make(chan *httptest.ResponseRecorder, 1)
-	go func() { finished <- postStreamCtx(ctx, api, `{"endpoint":"8.8.8.8"}`) }()
+	go func() { finished <- postStreamCtx(ctx, api, `{"endpoint":"203.0.113.53"}`) }()
 	select {
 	case rec := <-finished:
 		if strings.Contains(rec.Body.String(), `"type":"error"`) {
@@ -538,7 +538,7 @@ func TestTraceStreamStopsWhenWritesFail(t *testing.T) {
 	stopped := make(chan struct{})
 	tracer := &fakeTracer{block: true, stopped: stopped}
 	api := NewAPI(tracer, fakeResolver{}, geo.Nop{}, 1)
-	req := httptest.NewRequest(http.MethodPost, "/api/trace/stream", strings.NewReader(`{"endpoint":"8.8.8.8"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/trace/stream", strings.NewReader(`{"endpoint":"203.0.113.53"}`))
 	done := make(chan struct{})
 	go func() {
 		api.TraceStream(failingWriter{httptest.NewRecorder()}, req)

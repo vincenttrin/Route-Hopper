@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tamtrinh/traffic-visualizer/backend/trace"
+	"github.com/vincenttrin/Route-Hopper/backend/trace"
 )
 
 // secrets are the details of the first two hops of leakyRoute. None of them may
@@ -17,16 +17,16 @@ func leakyRoute() []trace.Hop {
 	return []trace.Hop{
 		{Number: 1, IP: addr("192.168.77.1"), Hostname: "secret-gateway.lan", RTT: 7.77},
 		{Number: 2, IP: addr("10.99.88.77"), Hostname: "inner-isp.example", RTT: 8.88},
-		{Number: 3, IP: addr("96.34.20.4"), Hostname: "edge.cox.net", RTT: 9},
+		{Number: 3, IP: addr("198.51.100.4"), Hostname: "edge.example.net", RTT: 9},
 		{Number: 4},
-		{Number: 5, IP: addr("93.184.216.34"), Hostname: "example.com", RTT: 12},
+		{Number: 5, IP: addr("203.0.113.10"), Hostname: "example.com", RTT: 12},
 	}
 }
 
 func leakGeo() fakeGeo {
 	return fakeGeo{
-		addr("96.34.20.4"):    {Lat: 41.25, Lng: -95.94, City: "Omaha", Country: "US", Org: "Cox"},
-		addr("93.184.216.34"): {Lat: 52.37, Lng: 4.9, City: "Amsterdam", Country: "NL", Org: "Edgecast"},
+		addr("198.51.100.4"): {Lat: 41.25, Lng: -95.94, City: "Omaha", Country: "US", Org: "Example Telecom"},
+		addr("203.0.113.10"): {Lat: 52.37, Lng: 4.9, City: "Amsterdam", Country: "NL", Org: "Example CDN"},
 		// Private hops are never located, but a database entry must not matter either way.
 		addr("192.168.77.1"): {Lat: 1.1, Lng: 2.2, City: "Secretville", Org: "SecretNet"},
 		addr("10.99.88.77"):  {Lat: 3.3, Lng: 4.4, City: "Secretville", Org: "SecretNet"},
@@ -70,7 +70,7 @@ func TestHiddenHopsNeverReachTheClient(t *testing.T) {
 	plain := &fakeTracer{hops: leakyRoute()}
 
 	t.Run("plain", func(t *testing.T) {
-		rec := post(hiddenAPI(plain, 2), `{"endpoint":"93.184.216.34"}`)
+		rec := post(hiddenAPI(plain, 2), `{"endpoint":"203.0.113.10"}`)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status %d: %s", rec.Code, rec.Body)
 		}
@@ -82,14 +82,14 @@ func TestHiddenHopsNeverReachTheClient(t *testing.T) {
 		if n := hopNumbers(got.Hops); len(n) != 3 || n[0] != 1 || n[1] != 2 || n[2] != 3 {
 			t.Errorf("hop numbers = %v, want 1 2 3", n)
 		}
-		if got.Hops[0].IP != "96.34.20.4" || got.Hops[2].IP != "93.184.216.34" || !got.Reached {
+		if got.Hops[0].IP != "198.51.100.4" || got.Hops[2].IP != "203.0.113.10" || !got.Reached {
 			t.Errorf("hops = %+v reached=%v", got.Hops, got.Reached)
 		}
 	})
 
 	for name, tr := range map[string]*fakeTracer{"stream": plain, "stream with ICMP retry": retry} {
 		t.Run(name, func(t *testing.T) {
-			rec := postStream(hiddenAPI(tr, 2), `{"endpoint":"93.184.216.34"}`)
+			rec := postStream(hiddenAPI(tr, 2), `{"endpoint":"203.0.113.10"}`)
 			noSecrets(t, "stream", rec.Body.String())
 			events := decodeEvents(t, rec.Body.String())
 			var shown []hopJSON
@@ -119,7 +119,7 @@ func TestHiddenHopsStayOutOfWarnings(t *testing.T) {
 		{Number: 2}, {Number: 3}, {Number: 4},
 	}
 	api := hiddenAPI(&fakeTracer{hops: dockerLike}, 2)
-	rec := post(api, `{"endpoint":"8.8.8.8"}`)
+	rec := post(api, `{"endpoint":"203.0.113.53"}`)
 	noSecrets(t, "plain response", rec.Body.String())
 	var got traceResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
@@ -129,7 +129,7 @@ func TestHiddenHopsStayOutOfWarnings(t *testing.T) {
 		t.Errorf("response = %+v", got)
 	}
 
-	rec = postStream(api, `{"endpoint":"8.8.8.8"}`)
+	rec = postStream(api, `{"endpoint":"203.0.113.53"}`)
 	noSecrets(t, "stream", rec.Body.String())
 	events := decodeEvents(t, rec.Body.String())
 	if done := events[len(events)-1]; !strings.Contains(done.Warning, "Docker Desktop") {
@@ -140,13 +140,13 @@ func TestHiddenHopsStayOutOfWarnings(t *testing.T) {
 func TestLocationWarningIgnoresHiddenHops(t *testing.T) {
 	// The hidden hops are located but the visible ones are not: the warning is about what the user sees.
 	hops := []trace.Hop{
-		{Number: 1, IP: addr("192.168.77.1")}, {Number: 2, IP: addr("96.34.20.4")},
-		{Number: 3, IP: addr("93.184.216.34")}, {Number: 4, IP: addr("93.184.216.35")},
+		{Number: 1, IP: addr("192.168.77.1")}, {Number: 2, IP: addr("198.51.100.4")},
+		{Number: 3, IP: addr("203.0.113.10")}, {Number: 4, IP: addr("203.0.113.11")},
 	}
-	g := fakeGeo{addr("96.34.20.4"): {Lat: 41.25, Lng: -95.94}}
+	g := fakeGeo{addr("198.51.100.4"): {Lat: 41.25, Lng: -95.94}}
 	api := NewAPI(&fakeTracer{hops: hops}, fakeResolver{}, g, 1)
 	api.HiddenHops = 2
-	if got := decodeTrace(t, api, "93.184.216.35"); !strings.Contains(got.Warning, "GeoIP") {
+	if got := decodeTrace(t, api, "203.0.113.11"); !strings.Contains(got.Warning, "GeoIP") {
 		t.Errorf("warning = %q", got.Warning)
 	}
 }
@@ -158,7 +158,7 @@ func TestShortTraceHasAMessageNotAnEmptyResult(t *testing.T) {
 		dest string
 	}{
 		{"destination is the second hop", leakyRoute()[:2], "10.99.88.77"},
-		{"destination never answered past the second hop", []trace.Hop{leakyRoute()[0], leakyRoute()[1]}, "93.184.216.34"},
+		{"destination never answered past the second hop", []trace.Hop{leakyRoute()[0], leakyRoute()[1]}, "203.0.113.10"},
 		{"one hop", leakyRoute()[:1], "192.168.77.1"},
 	}
 	for _, tt := range tests {
