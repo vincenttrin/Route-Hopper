@@ -144,10 +144,10 @@ type site struct{ city, airport string }
 // another continent. Add to this list when a bad match turns up; it costs a
 // missed location at worst.
 var notAirports = setOf(
-	"aar", "acc", "acx", "act", "add", "ags", "asr", "asw", "bar", "bbr", "bgw", "bsr", "cap", "cat", "col", "cor",
-	"dig", "dog", "ear", "ext", "for", "get", "gig", "isp", "lan", "lap", "law", "let", "lns", "lsr", "man", "mgt",
-	"mlx", "mob", "nas", "nat", "noc", "ont", "ops", "pat", "pop", "pos", "ppp", "pri", "qfx", "res", "row", "run",
-	"san", "sdn", "sig", "srv", "ssw", "stg", "sub", "svr", "sys", "tac", "ten", "the", "tun", "vpn", "win",
+	"aar", "acc", "acx", "act", "add", "ags", "asr", "asw", "bar", "bbr", "bgw", "bsr", "cap", "cat", "cgn", "col", "cor", "cpe",
+	"dig", "dog", "ear", "ext", "for", "get", "gig", "ibr", "isp", "lan", "lap", "law", "let", "lns", "lsr", "man", "mgt",
+	"mlx", "mob", "nas", "nat", "noc", "ont", "ops", "pat", "pop", "pos", "ppp", "pri", "pub", "qfx", "res", "row", "run",
+	"san", "sdn", "sig", "spn", "srv", "ssw", "stg", "sub", "svr", "sys", "tac", "ten", "the", "tun", "vpn", "win",
 )
 
 func setOf(words ...string) map[string]bool {

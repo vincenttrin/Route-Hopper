@@ -82,6 +82,8 @@ func TestLocateHostnameFalsePositives(t *testing.T) {
 		"ae1.ten1.example.net",
 		"pop1.mgt.example.net",
 		"vpn.example.net",
+		"cpe-1-2-3-4.socal.res.rr.com",
+		"cgn01.example.net",
 		"man1.example.net",
 		"asr1.example.net",
 		"ae1.ear1.example.net",
