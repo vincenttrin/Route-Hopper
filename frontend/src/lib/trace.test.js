@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeTrace, summarize, distanceKm, routeDistanceKm } from './trace.js';
+import { normalizeTrace, summarize, distanceKm, routeDistanceKm, locationNote } from './trace.js';
 import { SAMPLE_TRACE } from '../services/sample.js';
 
 describe('normalizeTrace', () => {
@@ -206,5 +206,44 @@ describe('routeDistanceKm', () => {
     expect(s.exactKm).toBe(routeDistanceKm(hops));
     expect(s.km).toBe(Math.round(s.exactKm));
     expect(s.located).toBe(hops.filter((h) => h.located).length);
+  });
+});
+
+describe('location source', () => {
+  const raw = {
+    hops: [
+      { hopNumber: 1, ip: '198.51.100.1', hostname: 'ae1.ord3.example.net', lat: 41.97, lng: -87.9, locationSource: 'hostname', locationHint: 'ord3', rtt: 5 },
+      { hopNumber: 2, ip: '198.51.100.2', hostname: 'core.example.net', lat: 52.37, lng: 4.9, locationSource: 'geoip', rtt: 6 },
+      { hopNumber: 3, ip: '198.51.100.3', hostname: '', lat: 0, lng: 0, rtt: 7 },
+      { hopNumber: 4, ip: '192.168.1.1', hostname: '', lat: 0, lng: 0, rtt: 8 },
+    ],
+  };
+  const { hops } = normalizeTrace(raw);
+
+  it('carries the source and hint through', () => {
+    expect(hops[0].locationSource).toBe('hostname');
+    expect(hops[0].locationHint).toBe('ord3');
+    expect(hops[1].locationSource).toBe('geoip');
+    expect(hops[1].locationHint).toBeNull();
+    expect(hops[2].locationSource).toBeNull();
+  });
+
+  it('describes how a located hop was placed, and says nothing for the rest', () => {
+    expect(locationNote(hops[0])).toBe('Placed from "ord3" in its host name');
+    expect(locationNote(hops[1])).toMatch(/IP database/);
+    expect(locationNote(hops[2])).toBeNull();
+    expect(locationNote(hops[3])).toBeNull();
+  });
+
+  it('measures the route between the hostname and geoip positions, as placed', () => {
+    const km = routeDistanceKm(hops);
+    expect(km).toBeGreaterThan(6500);
+    expect(km).toBeLessThan(7000);
+  });
+
+  it('accepts a response from a backend that sends no source', () => {
+    const old = normalizeTrace({ hops: [{ hopNumber: 1, ip: '198.51.100.1', lat: 1, lng: 1, rtt: 1 }] }).hops[0];
+    expect(old.located).toBe(true);
+    expect(locationNote(old)).toBeNull();
   });
 });

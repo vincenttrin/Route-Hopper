@@ -104,7 +104,7 @@ func TestTraceResponseShape(t *testing.T) {
 	want := []hopJSON{
 		{HopNumber: 1, IP: "192.168.1.1", Hostname: "gateway.lan", RTT: 1.5},
 		{HopNumber: 2},
-		{HopNumber: 3, IP: "203.0.113.10", Hostname: "example.com", City: "Amsterdam", Country: "NL", Org: "Example CDN", Lat: 52.37, Lng: 4.9, RTT: 12},
+		{HopNumber: 3, IP: "203.0.113.10", Hostname: "example.com", City: "Amsterdam", Country: "NL", Org: "Example CDN", Lat: 52.37, Lng: 4.9, RTT: 12, LocationSource: "geoip"},
 	}
 	if len(got.Hops) != len(want) {
 		t.Fatalf("hops = %+v", got.Hops)
@@ -364,7 +364,7 @@ func TestTraceStreamEmitsStartHopsAndDone(t *testing.T) {
 	if d := events[0].Destination; d == nil || d.IP != "203.0.113.10" || d.City != "Amsterdam" || d.Lat != 52.37 {
 		t.Errorf("start destination = %+v", d)
 	}
-	want := hopJSON{HopNumber: 3, IP: "203.0.113.10", Hostname: "example.com", City: "Amsterdam", Country: "NL", Org: "Example CDN", Lat: 52.37, Lng: 4.9, RTT: 12}
+	want := hopJSON{HopNumber: 3, IP: "203.0.113.10", Hostname: "example.com", City: "Amsterdam", Country: "NL", Org: "Example CDN", Lat: 52.37, Lng: 4.9, RTT: 12, LocationSource: "geoip"}
 	if *events[3].Hop != want {
 		t.Errorf("hop 3 = %+v, want %+v", *events[3].Hop, want)
 	}

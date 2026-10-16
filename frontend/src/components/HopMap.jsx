@@ -3,6 +3,7 @@ import L from 'leaflet';
 import { bunnyMarkup } from './Bunny.jsx';
 import { HOP_MS } from '../lib/pace.js';
 import { arcPath, arcPoint } from '../lib/arc.js';
+import { locationNote } from '../lib/trace.js';
 
 const INK = '#2f2a35';
 const PAPER = '#fdf6ea';
@@ -26,6 +27,13 @@ function tooltipFor(h) {
   const num = document.createElement('b');
   num.textContent = String(h.n).padStart(2, '0');
   root.append(num, ` ${h.city || h.hostname || h.ip}`, document.createElement('br'), `${h.ip} - ${h.rtt != null ? h.rtt.toFixed(1) + ' ms' : 'no rtt'}`);
+  const note = locationNote(h);
+  if (note) {
+    const small = document.createElement('small');
+    small.className = 'tip-note';
+    small.textContent = note;
+    root.append(document.createElement('br'), small);
+  }
   return root;
 }
 

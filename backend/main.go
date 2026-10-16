@@ -34,6 +34,11 @@ func main() {
 	}
 
 	api := handlers.NewAPI(tracer, trace.SystemResolver, locator, envInt("MAX_CONCURRENT_TRACES", 4))
+	hostnames, err := geo.NewHostnameLocator()
+	if err != nil {
+		log.Fatalf("load airport table: %v", err)
+	}
+	api.Hostnames = hostnames
 	api.AllowPrivate = os.Getenv("ALLOW_PRIVATE_TARGETS") == "true"
 	api.HiddenHops = handlers.DefaultHiddenHops
 

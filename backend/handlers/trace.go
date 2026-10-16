@@ -26,6 +26,9 @@ type API struct {
 	Tracer   Tracer
 	Resolver trace.Resolver
 	Geo      geo.Locator
+	// Hostnames places a hop from the location code in its reverse DNS name.
+	// It is tried before Geo; nil skips it.
+	Hostnames *geo.HostnameLocator
 	// AllowPrivate permits tracing loopback and private addresses.
 	AllowPrivate bool
 	// HiddenHops is how many hops at the start of every trace are withheld from
@@ -56,6 +59,11 @@ type hopJSON struct {
 	Lat       float64 `json:"lat"`
 	Lng       float64 `json:"lng"`
 	RTT       float64 `json:"rtt"`
+	// LocationSource says where lat and lng came from: "hostname" or "geoip".
+	// Absent when the hop has no position.
+	LocationSource string `json:"locationSource,omitempty"`
+	// LocationHint is the part of the host name a "hostname" position was read from.
+	LocationHint string `json:"locationHint,omitempty"`
 }
 
 type destinationJSON struct {
@@ -264,14 +272,19 @@ func (a *API) TraceStream(w http.ResponseWriter, r *http.Request) {
 	send(streamEvent{Type: "done", Destination: &dest, Reached: &reached, Warning: a.warning(ip, hops, shown)})
 }
 
-// enrich converts a hop to its JSON form with geolocation filled in.
+// enrich converts a hop to its JSON form with its location filled in.
 func (a *API) enrich(h trace.Hop) hopJSON {
 	hj := hopJSON{HopNumber: h.Number, Hostname: h.Hostname, RTT: h.RTT}
 	if h.IP.IsValid() {
 		hj.IP = h.IP.String()
-		if loc, ok := a.locate(h.IP); ok {
-			hj.City, hj.Country, hj.Org = loc.City, loc.Country, loc.Org
-			hj.Lat, hj.Lng = loc.Lat, loc.Lng
+		if p, ok := a.place(h); ok {
+			hj.City, hj.Country, hj.Org = p.City, p.Country, p.Org
+			hj.Lat, hj.Lng = p.Lat, p.Lng
+			hj.LocationSource, hj.LocationHint = p.Source, p.Hint
+			if p.Disagrees() {
+				// The host name still wins; the log is how a bad rule gets noticed.
+				log.Printf("hop %d: host name %q places it %.0f km from where GeoIP does; using the host name", h.Number, h.Hostname, p.DisagreementKm)
+			}
 		}
 	}
 	return hj
@@ -300,7 +313,7 @@ func (a *API) warning(ip netip.Addr, hops, shown []trace.Hop) string {
 			continue
 		}
 		anyPublic = anyPublic || geo.IsPublic(h.IP)
-		if _, ok := a.locate(h.IP); ok {
+		if _, ok := a.place(h); ok {
 			anyLocated = true
 		}
 	}
@@ -310,6 +323,19 @@ func (a *API) warning(ip netip.Addr, hops, shown []trace.Hop) string {
 	return ""
 }
 
+// place decides where a hop is: from its host name first, which says where
+// the router is, and only otherwise from the GeoIP database, which often
+// puts router addresses at the owner's head office. Private addresses are
+// never placed.
+func (a *API) place(h trace.Hop) (geo.Placement, bool) {
+	if !geo.IsPublic(h.IP) {
+		return geo.Placement{}, false
+	}
+	loc, found := a.Geo.Lookup(h.IP)
+	return geo.Place(a.Hostnames, h.Hostname, loc, found)
+}
+
+// locate looks an address up in the GeoIP database alone.
 func (a *API) locate(ip netip.Addr) (geo.Location, bool) {
 	if !geo.IsPublic(ip) {
 		return geo.Location{}, false

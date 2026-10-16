@@ -37,6 +37,8 @@ export function normalizeTrace(raw, { partial = false } = {}) {
       city: clean(h.city),
       country: clean(h.country),
       org: h.org,
+      locationSource: clean(h.locationSource),
+      locationHint: clean(h.locationHint),
       lat: h.lat,
       lng: h.lng,
       rtt: ip && Number.isFinite(h.rtt) ? h.rtt : null,
@@ -113,6 +115,20 @@ export function summarize(hops, networks) {
     // Only the destination's own reply is a latency to it.
     rtt: last?.destination ? last.rtt : null,
   };
+}
+
+/**
+ * A short note on how a hop was placed on the map, for a tooltip, or null when it was not placed. The backend reads
+ * a site code out of the router's host name when it can and only otherwise trusts the GeoIP database, which is
+ * often wrong about router addresses.
+ */
+export function locationNote(hop) {
+  if (!hop.located) return null;
+  if (hop.locationSource === 'hostname') {
+    return hop.locationHint ? `Placed from "${hop.locationHint}" in its host name` : 'Placed from its host name';
+  }
+  if (hop.locationSource === 'geoip') return 'Placed by an IP database, so only approximate';
+  return null;
 }
 
 export function placeLabel(hop) {
