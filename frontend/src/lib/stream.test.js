@@ -63,7 +63,7 @@ describe('readEvents', () => {
 
 describe('reduceStream', () => {
   const run = (...events) => events.reduce(reduceStream, EMPTY_STREAM);
-  const dest = { ip: '1.1.1.1', lat: 1, lng: 2 };
+  const dest = { ip: '198.51.100.1', lat: 1, lng: 2 };
   const hop = (n) => ({ type: 'hop', hop: { hopNumber: n, ip: `10.0.0.${n}` } });
 
   it('collects hops in arrival order', () => {

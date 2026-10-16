@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"net/netip"
 
-	"github.com/tamtrinh/traffic-visualizer/backend/geo"
-	"github.com/tamtrinh/traffic-visualizer/backend/trace"
+	"github.com/vincenttrin/Route-Hopper/backend/geo"
+	"github.com/vincenttrin/Route-Hopper/backend/trace"
 )
 
 // Tracer traces the route to an address.

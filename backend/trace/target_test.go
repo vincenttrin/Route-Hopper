@@ -13,11 +13,11 @@ func TestParseEndpoint(t *testing.T) {
 		"  Example.com. ":                "Example.com",
 		"https://example.com/a/b?c=d":    "example.com",
 		"http://user@example.com:8080/x": "example.com",
-		"1.2.3.4":                        "1.2.3.4",
-		"1.2.3.4:443":                    "1.2.3.4",
-		"[2606:4700::1111]:443":          "2606:4700::1111",
-		"2606:4700::1111":                "2606:4700::1111",
-		"::ffff:1.2.3.4":                 "1.2.3.4",
+		"192.0.2.4":                      "192.0.2.4",
+		"192.0.2.4:443":                  "192.0.2.4",
+		"[2001:db8::1111]:443":           "2001:db8::1111",
+		"2001:db8::1111":                 "2001:db8::1111",
+		"::ffff:192.0.2.4":               "192.0.2.4",
 	}
 	for in, want := range good {
 		got, err := ParseEndpoint(in)
@@ -43,15 +43,15 @@ func (f fakeResolver) LookupNetIP(_ context.Context, _, host string) ([]netip.Ad
 
 func TestResolve(t *testing.T) {
 	r := fakeResolver{
-		"dual.test":  {netip.MustParseAddr("2606:4700::1111"), netip.MustParseAddr("1.1.1.1")},
+		"dual.test":  {netip.MustParseAddr("2001:db8::1111"), netip.MustParseAddr("198.51.100.1")},
 		"local.test": {netip.MustParseAddr("10.1.2.3")},
 	}
 	ctx := context.Background()
 
-	if ip, err := Resolve(ctx, r, "dual.test", false); err != nil || ip.String() != "1.1.1.1" {
+	if ip, err := Resolve(ctx, r, "dual.test", false); err != nil || ip.String() != "198.51.100.1" {
 		t.Errorf("dual = %v, %v; want IPv4 preferred", ip, err)
 	}
-	if ip, err := Resolve(ctx, r, "8.8.8.8", false); err != nil || ip.String() != "8.8.8.8" {
+	if ip, err := Resolve(ctx, r, "203.0.113.53", false); err != nil || ip.String() != "203.0.113.53" {
 		t.Errorf("literal = %v, %v", ip, err)
 	}
 	if _, err := Resolve(ctx, r, "missing.test", false); !errors.Is(err, ErrUnresolvable) {

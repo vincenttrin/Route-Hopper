@@ -11,8 +11,8 @@ describe('endpointLabel', () => {
   it('keeps just the host', () => {
     expect(endpointLabel('example.com')).toBe('example.com');
     expect(endpointLabel('  https://user:pw@Example.com:8443/a/b?token=secret#x ')).toBe('example.com');
-    expect(endpointLabel('1.1.1.1')).toBe('1.1.1.1');
-    expect(endpointLabel('[2606:4700::1111]')).toBe('2606:4700::1111');
+    expect(endpointLabel('198.51.100.1')).toBe('198.51.100.1');
+    expect(endpointLabel('[2001:db8::1111]')).toBe('2001:db8::1111');
     expect(endpointLabel('')).toBe('somewhere');
   });
 });
@@ -21,16 +21,16 @@ describe('hopLine', () => {
   const hop = (network, span) => ({ network, span });
 
   it('draws a bunny, a tile per hop coloured by network, and a carrot', () => {
-    const hops = [hop('Local network'), hop('Cox'), hop('Cox'), hop('Lumen'), hop(null), hop('Cox'), hop('GTT')];
+    const hops = [hop('Local network'), hop('Example Telecom'), hop('Example Telecom'), hop('Example Backbone'), hop(null), hop('Example Telecom'), hop('Example Transit')];
     expect(hopLine(hops)).toBe('🐇⬜🟪🟪🟦⬛🟪🟩🥕');
   });
 
   it('counts a folded run of silent hops as that many tiles and drops the carrot when the destination never replied', () => {
-    expect(hopLine([hop('Cox'), hop(null, 3)], false)).toBe('🐇🟪⬛⬛⬛');
+    expect(hopLine([hop('Example Telecom'), hop(null, 3)], false)).toBe('🐇🟪⬛⬛⬛');
   });
 
   it('stays short for a long route', () => {
-    const hops = Array.from({ length: 30 }, () => hop('Cox'));
+    const hops = Array.from({ length: 30 }, () => hop('Example Telecom'));
     expect([...hopLine(hops)].length).toBeLessThanOrEqual(24);
     expect(hopLine(hops)).toContain('…');
   });
@@ -50,7 +50,7 @@ describe('tripSummary', () => {
   });
 
   it('uses the singular for one hop', () => {
-    const one = normalizeTrace({ hops: [{ hopNumber: 1, ip: '93.184.216.34', city: 'Amsterdam', lat: 52.37, lng: 4.9 }], destination: { ip: '93.184.216.34' } });
+    const one = normalizeTrace({ hops: [{ hopNumber: 1, ip: '203.0.113.10', city: 'Amsterdam', lat: 52.37, lng: 4.9 }], destination: { ip: '203.0.113.10' } });
     const text = tripSummary({ endpoint: 'example.com', trace: one, stats: summarize(one.hops, one.networks), result: { status: 'unscoreable', reason: 'few-hops' } });
     expect(text.split('\n')[1]).toBe('1 hop');
   });

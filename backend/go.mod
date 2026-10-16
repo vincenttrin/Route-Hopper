@@ -1,4 +1,4 @@
-module github.com/tamtrinh/traffic-visualizer/backend
+module github.com/vincenttrin/Route-Hopper/backend
 
 go 1.27.1
 

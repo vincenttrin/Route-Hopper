@@ -23,7 +23,7 @@ import (
 
 var now = time.Date(2026, time.October, 9, 12, 0, 0, 0, time.UTC)
 
-// mmdb builds a one-record database. A City database knows 8.8.8.8 as `place`.
+// mmdb builds a one-record database. A City database knows 203.0.113.53 as `place`.
 func mmdb(t *testing.T, dbType string, built time.Time, place string) []byte {
 	t.Helper()
 	w, err := mmdbwriter.New(mmdbwriter.Options{DatabaseType: dbType, RecordSize: 24, BuildEpoch: built.Unix(), IncludeReservedNetworks: true})
@@ -40,7 +40,7 @@ func mmdb(t *testing.T, dbType string, built time.Time, place string) []byte {
 			"location": mmdbtype.Map{"latitude": mmdbtype.Float64(37.4), "longitude": mmdbtype.Float64(-122.1)},
 		}
 	}
-	_, n, _ := net.ParseCIDR("8.8.8.0/24")
+	_, n, _ := net.ParseCIDR("203.0.113.0/24")
 	if err := w.Insert(n, rec); err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func newUpdater(t *testing.T, srv *httptest.Server) (*Updater, *Swappable, strin
 
 func lookupPlace(t *testing.T, l Locator) string {
 	t.Helper()
-	loc, ok := l.Lookup(netip.MustParseAddr("8.8.8.8"))
+	loc, ok := l.Lookup(netip.MustParseAddr("203.0.113.53"))
 	if !ok {
 		return ""
 	}
@@ -386,7 +386,7 @@ func TestSwappableLookupsSurviveSwaps(t *testing.T) {
 
 func TestSwapDropsTheLookupCache(t *testing.T) {
 	s := NewSwappable(&counting{})
-	ip := netip.MustParseAddr("1.1.1.1")
+	ip := netip.MustParseAddr("198.51.100.1")
 	s.Lookup(ip)
 	s.Swap(Nop{})
 	if _, ok := s.Lookup(ip); ok {

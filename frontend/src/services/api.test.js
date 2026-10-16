@@ -5,7 +5,7 @@ const ndjson = (events, { status = 200, tail = '' } = {}) =>
   new Response(events.map((e) => JSON.stringify(e) + '\n').join('') + tail, { status });
 
 const hop = (n) => ({ type: 'hop', hop: { hopNumber: n, ip: `10.0.0.${n}` } });
-const START = { type: 'start', destination: { ip: '1.1.1.1' } };
+const START = { type: 'start', destination: { ip: '198.51.100.1' } };
 const DONE = { type: 'done', reached: true };
 
 function mockFetch(impl) {
