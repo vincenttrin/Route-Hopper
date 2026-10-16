@@ -29,7 +29,9 @@ Watch the bunny follow the route first, then guess how far the packet travelled.
 
 The **actual distance** is the sum of the great-circle distances between consecutive hops
 that have a location, in order. Hops without a location (private addresses, no reply, no
-database entry) are skipped.
+database entry) are skipped. The first 2 hops of every trace, which are the server's own
+local network, are removed by the backend before the browser gets the trace, so they are in
+none of this: not in the diagram, the map, the hop count, the distance or the share card.
 
 The **score** is relative: the ratio of the smaller of your guess and the actual distance
 to the larger. A guess within 10 km of the actual distance (over or under, always measured in
@@ -131,7 +133,7 @@ set `GEOIP_DIR=./geoip`; on Linux that folder must be writable by uid 10001
 files yourself. Details are in [backend/README.md](backend/README.md#geolocation-database).
 
 Docker Desktop on macOS and Windows drops the replies traceroute relies on, so traces
-there show only the first hop, and the UI warns about it. Use a Linux host, or run natively. Details are in
+show nothing past the container's gateway, and the UI warns about it. Use a Linux host, or run natively. Details are in
 [backend/README.md](backend/README.md#docker).
 
 ## Ports and environment variables

@@ -35,6 +35,7 @@ func main() {
 
 	api := handlers.NewAPI(tracer, trace.SystemResolver, locator, envInt("MAX_CONCURRENT_TRACES", 4))
 	api.AllowPrivate = os.Getenv("ALLOW_PRIVATE_TARGETS") == "true"
+	api.HiddenHops = handlers.DefaultHiddenHops
 
 	mux := http.NewServeMux()
 	// Both trace endpoints draw on one rate limit.
