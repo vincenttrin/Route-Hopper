@@ -145,7 +145,7 @@ docker-compose down
 ### Geolocation (Backend)
 - Load MaxMind GeoIP2 City and ASN .mmdb files at startup (optional; DB-IP "City Lite" also compatible)
 - Server runs without databases, returning lat/lng of 0 for all IPs
-- Lookup coordinates and ASN (for `org` field) for each hop's public IP
+- Lookup coordinates and ASN (for `org` field) for each hop's public IP; coordinates, city and country come first from a location code in the hop's reverse-DNS hostname (bundled airport table, see backend/README.md) and only otherwise from the database
 - Private addresses (RFC 1918, loopback, link-local) return lat/lng of 0 regardless of database
 
 ### Frontend Visualization

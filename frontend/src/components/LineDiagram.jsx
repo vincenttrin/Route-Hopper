@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { LOCAL, LOCAL_COLOR } from '../lib/trace.js';
+import { LOCAL, LOCAL_COLOR, locationNote } from '../lib/trace.js';
 import { BunnyArt, CarrotArt } from './Bunny.jsx';
 
 const ROW = 58;
@@ -110,7 +110,7 @@ export default function LineDiagram({ hops, live = false, selected, onSelect }) 
             >
               <span className="track-gap" />
               <span className="row-main">
-                <span className="city">
+                <span className="city" title={locationNote(h) ?? undefined}>
                   {title}
                   {h.network ? (
                     <span className="chip" style={{ background: h.color }}>

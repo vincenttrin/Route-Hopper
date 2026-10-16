@@ -1,7 +1,8 @@
 # traffic-visualizer backend
 
 Go API that runs the system `traceroute`, enriches each hop with reverse DNS and
-geolocation, and returns JSON for the frontend map.
+a location (read from its host name first, then from a GeoIP database), and returns JSON
+for the frontend map.
 
 ## Run
 
@@ -67,8 +68,12 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
   hops. A trace that ends within the hidden hops (the target is that close, or nothing
   past them answered) has nothing to show and gets a 422 with a plain-text message instead (an
   `error` event with `status` 422 when streaming). The hidden hops stay in the server's logs.
-- A hop that never answered has an empty `ip`; a hop without geolocation (private
+- A hop that never answered has an empty `ip`; a hop without a location (private
   addresses, unknown ranges) has `lat` and `lng` of 0.
+- `locationSource` (optional) says where a hop's `lat`, `lng`, `city` and `country` came from:
+  `"hostname"` (read from its reverse DNS name, with `locationHint` holding the token it was read
+  from, such as `ord3`) or `"geoip"`. It is absent when the hop has no position. `org` always comes
+  from the GeoIP ASN database. See [Hostname locations](#hostname-locations).
 - `rtt` is the mean of the answered probes in milliseconds.
 - The UDP pass is limited to 60 seconds and the ICMP fallback pass gets its own 15 seconds, so a trace takes at most about 75 seconds. If a limit is hit, the hops collected so far are returned.
 - Errors are plain text: 400 invalid input, 403 non-public target, 422 unresolvable
@@ -114,6 +119,85 @@ location database (it may still be downloading, or the download failed), in whic
 
 `updated` is the build date of the City database (UTC). Without a database it is just
 `{ "available": false }`. It changes by itself when the databases are refreshed.
+
+## Hostname locations
+
+GeoIP databases are built for end-user addresses and are often wrong about routers: a backbone
+router is typically placed at its owner's head office. Router host names are better evidence,
+because operators name routers after the site they sit in. So each hop is placed in two steps,
+and the first one that finds a position wins:
+
+1. **Host name.** The hop's reverse DNS name (already looked up by the trace) is searched for a
+   location code. If one decodes, its coordinates, `city` and `country` are used and
+   `locationSource` is `"hostname"`.
+2. **GeoIP.** Otherwise the position from the database is used (`"geoip"`). A hop that has
+   neither stays unlocated, as before. Private and other non-public addresses are never placed
+   from their names.
+
+No external service is called at trace time. The data is in the binary: the airport table
+`geo/data/airports.csv` (IATA code, city, ISO country, latitude, longitude), plus two small Go
+tables in `geo/hostname.go`.
+
+### What is recognised
+
+The registered domain (the last two labels, or three under `co.uk`-style suffixes) is ignored: it
+names the operator. The labels before it are read from the right, each split at dashes, and the
+first token that decodes wins, so `ae1.pr02.ord3.example.net` is read as `ord3`, and where two
+labels both look like sites the one nearest the domain wins.
+
+| Convention | Examples | Notes |
+| --- | --- | --- |
+| IATA airport code, optionally with a site number | `ord`, `ord3`, `ord03`, `iad-edge-01`, `be-100-ord-core`, `lax17s55` | Whole token only: 3 letters, then up to 3 digits (and an optional `s` and up to 3 digits) |
+| CLLI city and state code, optionally with a building suffix | `nycmny`, `chcgil01`, `dllstx09`, `lsanca03` | Only the codes in the `clliSites` table (about 60 North American hubs), because a CLLI code cannot be decoded by rule |
+| City abbreviation or metro code | `chi`, `nyc2`, `wdc`, `lon`, `par`, `tyo` | Table `citySites`; metro codes that no airport table has |
+| Full city name, optionally with a number | `chicago2`, `frankfurt`, `amsterdam` | Table `citySites` |
+
+A city or CLLI site takes the coordinates of its main airport.
+
+### False positives, and their limits
+
+Wrongly placing a router on another continent is worse than not placing it, so the matcher is
+conservative:
+
+- A token must be a whole label or dash-separated part. `border1`, `ordinary` and `portland` match
+  nothing.
+- Only airports with scheduled service and a medium or large size are in the table; small airfields
+  have codes nobody uses.
+- Three-letter tokens that are both airport codes and common router words are skipped (the
+  `notAirports` list in `geo/hostname.go`): `man`, `pop`, `ten`, `asr`, `ear`, `san`, `sub`, `vpn`,
+  `mgt`, `ops`, `nat` and others. This list is judgement, not proof: a word that is missing will be
+  read as an airport, and one that is listed costs a missed location (for example `san` for San
+  Diego; `sandiego` still works). Add to it when a bad match turns up.
+- Short role and interface tokens (`ae1`, `pr02`, `core`, `edge`, `bb`, `gw`, `lag`, `xe`, `et`,
+  `be`, `cr`, `br`) are not airport codes or have no 3-letter form, so they never match.
+- There is no per-provider rule table. Operators that put sites in unconventional places, or reuse
+  a code for something else, will be misread or missed. A name that carries the code of the site a
+  link goes *to* rather than where the router is would be placed at that other site. Operators that
+  abbreviate cities in other ways (four-letter city names, for example) are not decoded and fall
+  back to GeoIP.
+- IATA codes name an airport, so the position can be tens of kilometres from the city centre.
+  `city` is the airport's metro area (`IAD` is "Washington, D.C.", for instance).
+
+### When the host name and GeoIP disagree
+
+The host name wins whenever it decodes, as requested, even when GeoIP puts the hop somewhere else.
+`geo.Place` records the distance between the two positions, and `Placement.Disagrees()` is true past
+`geo.WildDisagreementKm` (3000 km, which is further than most one-region disagreements: Omaha to
+Chicago is about 650 km, and Chicago to Amsterdam about 6,600). The handler logs a line for each
+such hop (`host name "..." places it N km from where GeoIP does`) so bad rules are noticed; the
+client is not told. The behaviour is covered by `geo/hostname_test.go` and
+`handlers/hostname_test.go`.
+
+### The airport table
+
+`geo/data/airports.csv` is generated from [OurAirports](https://ourairports.com/data/)
+(`airports.csv`), which is released into the **public domain**; no attribution is required, but
+it is credited here. It keeps airports with an IATA code, scheduled service and type `large_airport`
+or `medium_airport`, and gives the municipality, ISO country and coordinates. To refresh it:
+
+```bash
+cd geo && go run gen_airports.go    # downloads the source; or pass a local airports.csv
+```
 
 ## Geolocation database
 

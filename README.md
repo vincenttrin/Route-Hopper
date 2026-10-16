@@ -79,7 +79,10 @@ only, never a path or query), never hop addresses or host names.
 
 - **Frontend:** React, Leaflet (OpenStreetMap tiles), Vite
 - **Backend:** Go REST API that shells out to the system `traceroute`
-- **Geolocation:** optional MaxMind GeoLite2 (or DB-IP City Lite) `.mmdb` files
+- **Geolocation:** each hop is placed from the site code in its router host name when there is
+  one (`ord3` in `ae1.pr02.ord3.example.net` is Chicago), using a bundled offline airport table,
+  and otherwise from optional MaxMind GeoLite2 (or DB-IP City Lite) `.mmdb` files. See
+  [Hostname locations](backend/README.md#hostname-locations).
 
 ## Prerequisites
 
@@ -166,7 +169,7 @@ cd frontend && npm test && npm run lint
 ## Layout
 
 ```
-backend/            Go API (main.go, handlers/, trace/, geo/); geo/ also downloads and refreshes the databases
+backend/            Go API (main.go, handlers/, trace/, geo/); geo/ places hops (host name codes, then GeoIP) and downloads and refreshes the databases
 frontend/           React app (src/components, src/lib, src/services)
 docker-compose.yml  Frontend (nginx) and backend services
 CLAUDE.md           Notes for AI coding agents
@@ -174,4 +177,5 @@ CLAUDE.md           Notes for AI coding agents
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The bundled airport table (`backend/geo/data/airports.csv`) is derived from
+[OurAirports](https://ourairports.com/data/), which is in the public domain.
