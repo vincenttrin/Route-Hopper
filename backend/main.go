@@ -35,6 +35,7 @@ func main() {
 
 	api := handlers.NewAPI(tracer, trace.SystemResolver, locator, envInt("MAX_CONCURRENT_TRACES", 4))
 	api.AllowPrivate = os.Getenv("ALLOW_PRIVATE_TARGETS") == "true"
+	api.HiddenHops = envCount("HIDDEN_HOPS", handlers.DefaultHiddenHops)
 
 	mux := http.NewServeMux()
 	// Both trace endpoints draw on one rate limit.
@@ -132,6 +133,14 @@ func env(key, def string) string {
 
 func envInt(key string, def int) int {
 	if v, err := strconv.Atoi(os.Getenv(key)); err == nil && v > 0 {
+		return v
+	}
+	return def
+}
+
+// envCount is envInt that also accepts 0.
+func envCount(key string, def int) int {
+	if v, err := strconv.Atoi(os.Getenv(key)); err == nil && v >= 0 {
 		return v
 	}
 	return def

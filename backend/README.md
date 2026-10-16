@@ -37,7 +37,8 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
 ```json
 {
   "hops": [
-    { "hopNumber": 1, "ip": "192.168.1.1", "hostname": "", "lat": 0, "lng": 0, "rtt": 3.1 },
+    { "hopNumber": 1, "ip": "68.1.4.1", "hostname": "", "city": "Omaha", "country": "US",
+      "org": "Cox", "lat": 41.25, "lng": -95.94, "rtt": 3.1 },
     { "hopNumber": 2, "ip": "", "hostname": "", "lat": 0, "lng": 0, "rtt": 0 },
     { "hopNumber": 3, "ip": "1.0.0.1", "hostname": "one.one.one.one", "city": "Sydney",
       "country": "AU", "org": "Cloudflare", "lat": -33.86, "lng": 151.2, "rtt": 25.8 }
@@ -59,12 +60,19 @@ may be a host name, IP, or URL. `maxHops` is optional (default 30, max 64).
   database, see [Geolocation database](#geolocation-database)). The frontend shows it
   above the results.
 
+- The first `HIDDEN_HOPS` hops (default 2) are never sent: a trace starts on the server's own
+  network, so they are its local network, with private addresses. They are dropped on the
+  server from both endpoints, and `hopNumber` counts from the first hop that is sent, so there
+  is no gap. `reached` and `warning` describe the whole route but say nothing about the hidden
+  hops. A trace that ends within the hidden hops (the target is that close, or nothing
+  past them answered) has nothing to show and gets a 422 with a plain-text message instead (an
+  `error` event with `status` 422 when streaming). The hidden hops stay in the server's logs.
 - A hop that never answered has an empty `ip`; a hop without geolocation (private
   addresses, unknown ranges) has `lat` and `lng` of 0.
 - `rtt` is the mean of the answered probes in milliseconds.
 - The UDP pass is limited to 60 seconds and the ICMP fallback pass gets its own 15 seconds, so a trace takes at most about 75 seconds. If a limit is hit, the hops collected so far are returned.
 - Errors are plain text: 400 invalid input, 403 non-public target, 422 unresolvable
-  host, 429 rate limited, 503 too many concurrent traces, 504 nothing traced in time.
+  host or a trace that ends within the hidden hops, 429 rate limited, 503 too many concurrent traces, 504 nothing traced in time.
 
 ### Streaming: `POST /api/trace/stream`
 
@@ -169,6 +177,7 @@ last-updated date; keep that credit if you redistribute the app.
 | `MAXMIND_LICENSE_KEY` | unset | Use MaxMind GeoLite2 instead of DB-IP Lite |
 | `ALLOW_PRIVATE_TARGETS` | `false` | Allow tracing loopback/private addresses (local dev only) |
 | `MAX_CONCURRENT_TRACES` | `4` | Traces running at once |
+| `HIDDEN_HOPS` | `2` | How many hops at the start of every trace are withheld from clients to keep the local network private; `0` shows every hop |
 | `RATE_LIMIT_PER_MINUTE` | `20` | Per client address, burst of 5 |
 
 The rate limiter keys on the connection's remote address, so behind a reverse proxy
@@ -191,8 +200,8 @@ environment to use GeoLite2, or `GEOIP_AUTO_UPDATE=false` to manage the files yo
 
 Docker Desktop on macOS and Windows runs containers behind a NAT that drops the
 "TTL exceeded" replies traceroute depends on, so traces from there show the container's
-gateway as hop 1 and then no replies. The backend detects this (no reply from any hop
-past the first) and returns a `warning`, which the UI shows as a banner and the server
+gateway as the first hop (hidden by default, see `HIDDEN_HOPS`) and then no replies. The
+backend detects this (no reply from any hop past the first) and returns a `warning`, which the UI shows as a banner and the server
 logs. Use a Linux host for real traces, or run the backend natively with
 `scripts/dev.sh` (see [Run](#run)). A firewall that drops all TTL-exceeded replies
 triggers the same warning.

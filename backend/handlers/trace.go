@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/netip"
@@ -27,6 +28,10 @@ type API struct {
 	Geo      geo.Locator
 	// AllowPrivate permits tracing loopback and private addresses.
 	AllowPrivate bool
+	// HiddenHops is how many hops at the start of every trace are withheld from
+	// clients: traces start on the server's own network, so those hops are its
+	// local network. Zero shows every hop. See visible.
+	HiddenHops int
 	// slots bounds concurrent traces, which are expensive.
 	slots chan struct{}
 }
@@ -70,10 +75,14 @@ type traceResponse struct {
 	Warning string `json:"warning,omitempty"`
 }
 
+// DefaultHiddenHops is how many hops the server withholds unless told otherwise.
+const DefaultHiddenHops = 2
+
 // noRepliesWarning is shown when only the first hop answered. It is the
 // signature of Docker Desktop on macOS and Windows, but a firewall that drops
-// all TTL-exceeded replies looks the same, so it says "may".
-const noRepliesWarning = "No hop past the first one replied, so this trace is incomplete. " +
+// all TTL-exceeded replies looks the same, so it says "may". The first hop may
+// be hidden, so it does not mention it.
+const noRepliesWarning = "No hop beyond the server's own network replied, so this trace is incomplete. " +
 	"If the backend runs in Docker Desktop (macOS or Windows), its network drops the replies " +
 	"traceroute needs: run the backend natively (see backend/README.md) or on a Linux host."
 
@@ -83,6 +92,39 @@ const noRepliesWarning = "No hop past the first one replied, so this trace is in
 const noLocationWarning = "None of the hops could be placed on the map. The backend has no GeoIP database loaded, " +
 	"or it has no entry for these addresses. The backend downloads the database on start when GEOIP_AUTO_UPDATE is on; " +
 	"otherwise run scripts/fetch-geoip.sh and restart it (see backend/README.md)."
+
+// shortTraceMessage is the answer when nothing of the route is left to show
+// once the hidden hops are removed. It does not say what they were.
+func (a *API) shortTraceMessage() string {
+	return fmt.Sprintf("The trace did not get past the first %d hops, which are hidden to keep the local network private, "+
+		"so there is nothing to show. Try a destination further away.", a.HiddenHops)
+}
+
+// visible returns the hop to show for h, numbered as if the hidden hops were
+// never there, or false when h is one of them. Hidden hops are identified by
+// the number traceroute gave them, so this holds when the ICMP retry replays
+// the route from hop 1.
+func (a *API) visible(h trace.Hop) (trace.Hop, bool) {
+	if a.HiddenHops <= 0 {
+		return h, true
+	}
+	if h.Number <= a.HiddenHops {
+		return trace.Hop{}, false
+	}
+	h.Number -= a.HiddenHops
+	return h, true
+}
+
+// visibleHops is visible applied to a finished route.
+func (a *API) visibleHops(hops []trace.Hop) []trace.Hop {
+	out := make([]trace.Hop, 0, len(hops))
+	for _, h := range hops {
+		if v, ok := a.visible(h); ok {
+			out = append(out, v)
+		}
+	}
+	return out
+}
 
 // startTrace validates a trace request and claims a concurrency slot for it.
 // On failure it has already written the error response and ok is false.
@@ -133,11 +175,16 @@ func (a *API) Trace(w http.ResponseWriter, r *http.Request) {
 		writeTraceError(w, err)
 		return
 	}
-	resp := traceResponse{Hops: make([]hopJSON, 0, len(hops)), Reached: trace.Reached(hops, ip)}
-	for _, h := range hops {
+	shown := a.visibleHops(hops)
+	if len(shown) == 0 && len(hops) > 0 {
+		http.Error(w, a.shortTraceMessage(), http.StatusUnprocessableEntity)
+		return
+	}
+	resp := traceResponse{Hops: make([]hopJSON, 0, len(shown)), Reached: trace.Reached(hops, ip)}
+	for _, h := range shown {
 		resp.Hops = append(resp.Hops, a.enrich(h))
 	}
-	resp.Warning = a.warning(ip, hops)
+	resp.Warning = a.warning(ip, hops, shown)
 	resp.Destination = a.destination(ip)
 	writeJSON(w, resp)
 }
@@ -192,8 +239,10 @@ func (a *API) TraceStream(w http.ResponseWriter, r *http.Request) {
 
 	hops, err := a.Tracer.Stream(ctx, ip, maxHops, trace.Sink{
 		Hop: func(h trace.Hop) {
-			hj := a.enrich(h)
-			send(streamEvent{Type: "hop", Hop: &hj})
+			if h, ok := a.visible(h); ok {
+				hj := a.enrich(h)
+				send(streamEvent{Type: "hop", Hop: &hj})
+			}
 		},
 		Phase: func(p trace.Phase) { send(streamEvent{Type: "phase", Phase: string(p)}) },
 		Reset: func() { send(streamEvent{Type: "reset"}) },
@@ -205,8 +254,13 @@ func (a *API) TraceStream(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	shown := a.visibleHops(hops)
+	if len(shown) == 0 && len(hops) > 0 {
+		send(streamEvent{Type: "error", Error: a.shortTraceMessage(), Status: http.StatusUnprocessableEntity})
+		return
+	}
 	reached := trace.Reached(hops, ip)
-	send(streamEvent{Type: "done", Destination: &dest, Reached: &reached, Warning: a.warning(ip, hops)})
+	send(streamEvent{Type: "done", Destination: &dest, Reached: &reached, Warning: a.warning(ip, hops, shown)})
 }
 
 // enrich converts a hop to its JSON form with geolocation filled in.
@@ -231,13 +285,16 @@ func (a *API) destination(ip netip.Addr) destinationJSON {
 }
 
 // warning explains why a finished trace may be incomplete, or returns "".
-func (a *API) warning(ip netip.Addr, hops []trace.Hop) string {
+// hops is the whole route and shown the part of it that clients see; the
+// result only ever says something about the route in general, never about the
+// hidden hops.
+func (a *API) warning(ip netip.Addr, hops, shown []trace.Hop) string {
 	if trace.NoRepliesBeyondFirstHop(hops) {
 		log.Printf("trace to %s: no replies beyond the first hop (Docker Desktop network, or a firewall dropping TTL-exceeded replies)", ip)
 		return noRepliesWarning
 	}
 	var anyPublic, anyLocated bool
-	for _, h := range hops {
+	for _, h := range shown {
 		if !h.IP.IsValid() {
 			continue
 		}

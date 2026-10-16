@@ -3,6 +3,7 @@ services:
     build: ./backend
     environment:
       ALLOW_PRIVATE_TARGETS: ${ALLOW_PRIVATE_TARGETS:-false}
+      HIDDEN_HOPS: ${HIDDEN_HOPS:-2}
       # The backend downloads the GeoIP databases on first start and refreshes them monthly.
       # Set a free MaxMind key to use GeoLite2 instead of the keyless DB-IP Lite default.
       GEOIP_AUTO_UPDATE: ${GEOIP_AUTO_UPDATE:-true}
