@@ -26,7 +26,11 @@ func main() {
 
 	tracer := trace.NewTracer()
 	locator := geo.NewSwappable(openGeo())
-	defer locator.Close()
+	defer func() {
+		if err := locator.Close(); err != nil {
+			log.Printf("close GeoIP databases: %v", err)
+		}
+	}()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -82,10 +86,15 @@ func main() {
 
 	go func() {
 		<-ctx.Done()
-		metricsSrv.Close()
+		if err := metricsSrv.Close(); err != nil {
+			log.Printf("stop metrics server: %v", err)
+		}
 		shutdown, cancel := context.WithTimeout(context.Background(), tracer.Timeout+tracer.ICMPTimeout+20*time.Second)
 		defer cancel()
-		srv.Shutdown(shutdown)
+		// An error here is the deadline passing with traces still running; they are cut off.
+		if err := srv.Shutdown(shutdown); err != nil {
+			log.Printf("shutdown: %v", err)
+		}
 	}()
 
 	log.Printf("listening on %s", srv.Addr)
