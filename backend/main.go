@@ -15,6 +15,7 @@ import (
 
 	"github.com/vincenttrin/Route-Hopper/backend/geo"
 	"github.com/vincenttrin/Route-Hopper/backend/handlers"
+	"github.com/vincenttrin/Route-Hopper/backend/metrics"
 	"github.com/vincenttrin/Route-Hopper/backend/trace"
 )
 
@@ -41,6 +42,8 @@ func main() {
 	api.Hostnames = hostnames
 	api.AllowPrivate = os.Getenv("ALLOW_PRIVATE_TARGETS") == "true"
 	api.HiddenHops = handlers.DefaultHiddenHops
+	m := metrics.New()
+	api.Metrics = m
 
 	mux := http.NewServeMux()
 	// Both trace endpoints draw on one rate limit.
@@ -55,15 +58,31 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + env("PORT", "8080"),
-		Handler:           mux,
+		Handler:           m.Middleware(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      tracer.Timeout + tracer.ICMPTimeout + 15*time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
+	// Metrics are served on a port of their own that nginx does not proxy and
+	// compose does not publish, so only the scraper on the internal network
+	// reaches them. The API runs normally if the port cannot be bound.
+	metricsSrv := &http.Server{
+		Addr:              env("METRICS_ADDR", ":9464"),
+		Handler:           m.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		log.Printf("serving metrics on %s", metricsSrv.Addr)
+		if err := metricsSrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("metrics disabled: %v", err)
+		}
+	}()
+
 	go func() {
 		<-ctx.Done()
+		metricsSrv.Close()
 		shutdown, cancel := context.WithTimeout(context.Background(), tracer.Timeout+tracer.ICMPTimeout+20*time.Second)
 		defer cancel()
 		srv.Shutdown(shutdown)

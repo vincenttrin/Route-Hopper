@@ -1,0 +1,25 @@
+// Grafana Alloy: scrapes the backend's metrics and ships them to Grafana Cloud.
+// Started by the "metrics" compose profile; see "Metrics" in README.md.
+
+prometheus.scrape "backend" {
+  // The service label is how the shared dashboard tells the apps apart.
+  targets = [{
+    __address__ = "backend:9464",
+    service     = "traffic-visualizer",
+  }]
+  job_name = "traffic-visualizer"
+  // One sample a minute per series keeps within the Grafana Cloud free tier.
+  scrape_interval = "60s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_PROM_URL")
+
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_PROM_USER")
+      password = sys.env("GRAFANA_CLOUD_API_KEY")
+    }
+  }
+}

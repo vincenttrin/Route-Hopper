@@ -262,7 +262,8 @@ func TestUpdateSkipsADatabaseThatIsNotNewer(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A month later the publisher still serves the same build: the age of the files is reset, not the databases.
-	u.Now = func() time.Time { return now.Add(40 * 24 * time.Hour) }
+	// The files were written at the real time, so the clock moves on from that, not from the fixed now.
+	u.Now = func() time.Time { return time.Now().Add(40 * 24 * time.Hour) }
 	if !u.Due() {
 		t.Fatal("not due after 40 days")
 	}

@@ -11,6 +11,7 @@ import (
 	"net/netip"
 
 	"github.com/vincenttrin/Route-Hopper/backend/geo"
+	"github.com/vincenttrin/Route-Hopper/backend/metrics"
 	"github.com/vincenttrin/Route-Hopper/backend/trace"
 )
 
@@ -35,6 +36,8 @@ type API struct {
 	// clients: traces start on the server's own network, so those hops are its
 	// local network. See visible.
 	HiddenHops int
+	// Metrics records each traceroute run; nil records nothing.
+	Metrics *metrics.Metrics
 	// slots bounds concurrent traces, which are expensive.
 	slots chan struct{}
 }
@@ -179,7 +182,9 @@ func (a *API) Trace(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 
+	finish := a.Metrics.StartTrace()
 	hops, err := a.Tracer.Trace(r.Context(), ip, maxHops)
+	finish(traceOutcome(r.Context(), ip, hops, err))
 	if err != nil {
 		writeTraceError(w, err)
 		return
@@ -246,6 +251,7 @@ func (a *API) TraceStream(w http.ResponseWriter, r *http.Request) {
 	dest := a.destination(ip)
 	send(streamEvent{Type: "start", Destination: &dest})
 
+	finish := a.Metrics.StartTrace()
 	hops, err := a.Tracer.Stream(ctx, ip, maxHops, trace.Sink{
 		Hop: func(h trace.Hop) {
 			if h, ok := a.visible(h); ok {
@@ -256,6 +262,7 @@ func (a *API) TraceStream(w http.ResponseWriter, r *http.Request) {
 		Phase: func(p trace.Phase) { send(streamEvent{Type: "phase", Phase: string(p)}) },
 		Reset: func() { send(streamEvent{Type: "reset"}) },
 	})
+	finish(traceOutcome(ctx, ip, hops, err))
 	if err != nil {
 		if ctx.Err() == nil {
 			status, msg := traceErrorStatus(err)
@@ -270,6 +277,22 @@ func (a *API) TraceStream(w http.ResponseWriter, r *http.Request) {
 	}
 	reached := trace.Reached(hops, ip)
 	send(streamEvent{Type: "done", Destination: &dest, Reached: &reached, Warning: a.warning(ip, hops, shown)})
+}
+
+// traceOutcome classifies a finished traceroute run for the metrics. ctx is
+// the run's context: once it has ended the client is gone, even if the tracer
+// returned the hops it had found by then.
+func traceOutcome(ctx context.Context, ip netip.Addr, hops []trace.Hop, err error) metrics.Outcome {
+	switch {
+	case ctx.Err() != nil:
+		return metrics.OutcomeCanceled
+	case err != nil:
+		return metrics.OutcomeError
+	case trace.Reached(hops, ip):
+		return metrics.OutcomeReached
+	default:
+		return metrics.OutcomeUnreached
+	}
 }
 
 // enrich converts a hop to its JSON form with its location filled in.
