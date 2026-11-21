@@ -73,7 +73,7 @@ func main() {
 	// compose does not publish, so only the scraper on the internal network
 	// reaches them. The API runs normally if the port cannot be bound.
 	metricsSrv := &http.Server{
-		Addr:              env("METRICS_ADDR", ":9464"),
+		Addr:              ":9464",
 		Handler:           m.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}

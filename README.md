@@ -182,7 +182,7 @@ Grafana Cloud account, point Alloy at a local Prometheus started with
 | --- | --- |
 | 8080 | Backend API (native run; `PORT` to change) |
 | 5173 | Vite dev server (native run) or frontend in Docker Compose (`PORT` to change); the two cannot run at the same time on one host |
-| 9464 | Backend Prometheus metrics (`METRICS_ADDR` to change); not published by compose |
+| 9464 | Backend Prometheus metrics (fixed, matches `alloy/config.alloy`); not published by compose |
 
 | Variable | Default | Used by |
 | --- | --- | --- |
@@ -194,7 +194,6 @@ Grafana Cloud account, point Alloy at a local Prometheus started with
 | `ALLOW_PRIVATE_TARGETS` | `false` | Allow tracing loopback/private addresses (local dev only) |
 | `MAX_CONCURRENT_TRACES` | `4` | Backend: traces running at once |
 | `RATE_LIMIT_PER_MINUTE` | `20` | Backend: per client address, burst of 5 |
-| `METRICS_ADDR` | `:9464` | Backend: listen address of the Prometheus metrics |
 | `COMPOSE_PROFILES` | unset | Compose: `metrics` starts `alloy`, which ships the metrics to Grafana Cloud |
 | `GRAFANA_CLOUD_PROM_URL`, `GRAFANA_CLOUD_PROM_USER`, `GRAFANA_CLOUD_API_KEY` | unset | Compose (`alloy`): Grafana Cloud remote write endpoint, username and token; see `.env.example` |
 

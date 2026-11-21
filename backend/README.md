@@ -122,8 +122,8 @@ location database (it may still be downloading, or the download failed), in whic
 
 ### Metrics: `GET /metrics` on port 9464
 
-Prometheus metrics are served on a listener of their own, `METRICS_ADDR` (default `:9464`),
-not on the API port: the frontend proxy never reaches them and compose does not publish the
+Prometheus metrics are served on a listener of their own, fixed at `:9464` to match the
+scrape target in `alloy/config.alloy`, not on the API port: the frontend proxy never reaches them and compose does not publish the
 port, so only a scraper on the compose network can read them (see
 [Metrics](../README.md#metrics-grafana-cloud) for shipping them to Grafana Cloud). Any path
 on that port answers with the metrics. If the port cannot be bound, the server logs
@@ -293,7 +293,6 @@ last-updated date; keep that credit if you redistribute the app.
 | `ALLOW_PRIVATE_TARGETS` | `false` | Allow tracing loopback/private addresses (local dev only) |
 | `MAX_CONCURRENT_TRACES` | `4` | Traces running at once |
 | `RATE_LIMIT_PER_MINUTE` | `20` | Per client address, burst of 5 |
-| `METRICS_ADDR` | `:9464` | Listen address of the Prometheus metrics (see [Metrics](#metrics-get-metrics-on-port-9464)) |
 
 The rate limiter keys on the connection's remote address, so behind a reverse proxy
 it limits the proxy as a whole. Terminate limits at the proxy or add trusted
