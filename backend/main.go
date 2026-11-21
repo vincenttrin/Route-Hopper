@@ -84,8 +84,14 @@ func main() {
 		}
 	}()
 
+	// ListenAndServe returns as soon as Shutdown starts; main waits on stopped so
+	// that the traces still running can finish before the process exits.
+	stopped := make(chan struct{})
 	go func() {
+		defer close(stopped)
 		<-ctx.Done()
+		// A second signal now kills the process instead of waiting for the traces.
+		stop()
 		if err := metricsSrv.Close(); err != nil {
 			log.Printf("stop metrics server: %v", err)
 		}
@@ -101,6 +107,7 @@ func main() {
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
+	<-stopped
 }
 
 func geoPaths() (city, asn string) {
