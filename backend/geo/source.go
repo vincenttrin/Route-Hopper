@@ -51,7 +51,7 @@ func (e httpStatusError) Error() string { return fmt.Sprintf("HTTP %d", e.status
 
 // get requests u and hands the body to read. Errors never include u, which may
 // carry a license key.
-func get(ctx context.Context, c *http.Client, u string, read func(io.Reader) error) error {
+func get(ctx context.Context, c *http.Client, u string, read func(io.Reader) error) (err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return errors.New("bad download URL")
@@ -64,11 +64,29 @@ func get(ctx context.Context, c *http.Client, u string, read func(io.Reader) err
 		}
 		return err
 	}
-	defer res.Body.Close()
+	defer func() {
+		if cerr := res.Body.Close(); err == nil {
+			err = cerr
+		}
+	}()
 	if res.StatusCode != http.StatusOK {
 		return httpStatusError{res.StatusCode}
 	}
 	return read(res.Body)
+}
+
+// gunzip hands the decompressed body to read. A body that ends early or fails
+// its checksum is an error even when read stopped short of the end.
+func gunzip(body io.Reader, read func(io.Reader) error) error {
+	gz, err := gzip.NewReader(body)
+	if err != nil {
+		return fmt.Errorf("not a gzip file: %w", err)
+	}
+	err = read(gz)
+	if cerr := gz.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 // writeFile copies r to dst, refusing anything larger than maxDatabaseBytes.
@@ -107,12 +125,7 @@ func (s *DBIPSource) Fetch(ctx context.Context, e Edition, dst string) error {
 	for _, month := range []time.Time{first, first.AddDate(0, -1, 0)} {
 		u := fmt.Sprintf("%s/dbip-%s-lite-%s.mmdb.gz", s.BaseURL, strings.ToLower(string(e)), month.Format("2006-01"))
 		err := get(ctx, s.Client, u, func(body io.Reader) error {
-			gz, err := gzip.NewReader(body)
-			if err != nil {
-				return fmt.Errorf("not a gzip file: %w", err)
-			}
-			defer gz.Close()
-			return writeFile(dst, gz)
+			return gunzip(body, func(r io.Reader) error { return writeFile(dst, r) })
 		})
 		var status httpStatusError
 		if errors.As(err, &status) {
@@ -139,24 +152,21 @@ func (*MaxMindSource) Name() string { return "MaxMind GeoLite2" }
 func (s *MaxMindSource) Fetch(ctx context.Context, e Edition, dst string) error {
 	q := url.Values{"edition_id": {"GeoLite2-" + string(e)}, "license_key": {s.LicenseKey}, "suffix": {"tar.gz"}}
 	err := get(ctx, s.Client, s.BaseURL+"?"+q.Encode(), func(body io.Reader) error {
-		gz, err := gzip.NewReader(body)
-		if err != nil {
-			return fmt.Errorf("not a gzip file: %w", err)
-		}
-		defer gz.Close()
-		tr := tar.NewReader(gz)
-		for {
-			h, err := tr.Next()
-			if err == io.EOF {
-				return errors.New("archive has no .mmdb file")
+		return gunzip(body, func(r io.Reader) error {
+			tr := tar.NewReader(r)
+			for {
+				h, err := tr.Next()
+				if err == io.EOF {
+					return errors.New("archive has no .mmdb file")
+				}
+				if err != nil {
+					return fmt.Errorf("read archive: %w", err)
+				}
+				if h.Typeflag == tar.TypeReg && path.Ext(h.Name) == ".mmdb" {
+					return writeFile(dst, tr)
+				}
 			}
-			if err != nil {
-				return fmt.Errorf("read archive: %w", err)
-			}
-			if h.Typeflag == tar.TypeReg && path.Ext(h.Name) == ".mmdb" {
-				return writeFile(dst, tr)
-			}
-		}
+		})
 	})
 	if err != nil {
 		var status httpStatusError

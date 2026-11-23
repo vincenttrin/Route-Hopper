@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -51,12 +52,17 @@ func mmdb(t *testing.T, dbType string, built time.Time, place string) []byte {
 	return buf.Bytes()
 }
 
+// gz, tgz and send run on the fake servers' goroutines, so they report
+// failures with Errorf: Fatal may only be called from the test's own.
+
 func gz(t *testing.T, b []byte) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
-	zw.Write(b)
-	zw.Close()
+	_, err := zw.Write(b)
+	if err = errors.Join(err, zw.Close()); err != nil {
+		t.Errorf("gzip: %v", err)
+	}
 	return buf.Bytes()
 }
 
@@ -65,11 +71,21 @@ func tgz(t *testing.T, name string, b []byte) []byte {
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(zw)
-	tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(b)), Typeflag: tar.TypeReg})
-	tw.Write(b)
-	tw.Close()
-	zw.Close()
+	err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(b)), Typeflag: tar.TypeReg})
+	if err == nil {
+		_, err = tw.Write(b)
+	}
+	if err = errors.Join(err, tw.Close(), zw.Close()); err != nil {
+		t.Errorf("tar.gz: %v", err)
+	}
 	return buf.Bytes()
+}
+
+func send(t *testing.T, w http.ResponseWriter, b []byte) {
+	t.Helper()
+	if _, err := w.Write(b); err != nil {
+		t.Errorf("write response: %v", err)
+	}
 }
 
 // publisher serves DB-IP style files for the months in `have`.
@@ -106,13 +122,13 @@ func (p *publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.garbage {
-		w.Write(gz(p.t, []byte("<html>rate limited</html>")))
+		send(p.t, w, gz(p.t, []byte("<html>rate limited</html>")))
 		return
 	}
 	if kind == "city" {
-		w.Write(gz(p.t, mmdb(p.t, p.cityType, p.built, p.place)))
+		send(p.t, w, gz(p.t, mmdb(p.t, p.cityType, p.built, p.place)))
 	} else {
-		w.Write(gz(p.t, mmdb(p.t, "DBIP-ASN-Lite (compat=GeoLite2-ASN)", p.built, p.place)))
+		send(p.t, w, gz(p.t, mmdb(p.t, "DBIP-ASN-Lite (compat=GeoLite2-ASN)", p.built, p.place)))
 	}
 }
 
@@ -208,7 +224,11 @@ func TestUpdateNewerDatabaseReplacesOlderWithoutRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m.Close()
+	defer func() {
+		if err := m.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	if got := lookupPlace(t, m); got != "New/New" {
 		t.Errorf("file on disk = %q", got)
 	}
@@ -262,7 +282,8 @@ func TestUpdateSkipsADatabaseThatIsNotNewer(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A month later the publisher still serves the same build: the age of the files is reset, not the databases.
-	u.Now = func() time.Time { return now.Add(40 * 24 * time.Hour) }
+	// The files were written at the real time, so the clock moves on from that, not from the fixed now.
+	u.Now = func() time.Time { return time.Now().Add(40 * 24 * time.Hour) }
 	if !u.Due() {
 		t.Fatal("not due after 40 days")
 	}
@@ -296,7 +317,9 @@ func TestDue(t *testing.T) {
 		t.Error("missing files are due")
 	}
 	for _, p := range []string{u.CityPath, u.ASNPath} {
-		os.WriteFile(p, []byte("x"), 0o644)
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	u.Now = func() time.Time { return time.Now().Add(29 * 24 * time.Hour) }
 	if u.Due() {
@@ -377,18 +400,24 @@ func TestSwappableLookupsSurviveSwaps(t *testing.T) {
 		}()
 	}
 	for i := range 50 {
-		s.Swap(open([]string{"B", "A"}[i%2]))
+		if err := s.Swap(open([]string{"B", "A"}[i%2])); err != nil {
+			t.Error(err)
+		}
 	}
 	close(stop)
 	wg.Wait()
-	s.Close()
+	if err := s.Close(); err != nil {
+		t.Error(err)
+	}
 }
 
 func TestSwapDropsTheLookupCache(t *testing.T) {
 	s := NewSwappable(&counting{})
 	ip := netip.MustParseAddr("198.51.100.1")
 	s.Lookup(ip)
-	s.Swap(Nop{})
+	if err := s.Swap(Nop{}); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := s.Lookup(ip); ok {
 		t.Error("a cached result outlived the database it came from")
 	}
@@ -406,7 +435,7 @@ func TestMaxMindSource(t *testing.T) {
 		}
 		asked = append(asked, q.Get("edition_id")+"/"+q.Get("suffix"))
 		edition := strings.TrimPrefix(q.Get("edition_id"), "GeoLite2-")
-		w.Write(tgz(t, "GeoLite2-"+edition+"_20261006/GeoLite2-"+edition+".mmdb", mmdb(t, q.Get("edition_id"), built, "MM")))
+		send(t, w, tgz(t, "GeoLite2-"+edition+"_20261006/GeoLite2-"+edition+".mmdb", mmdb(t, q.Get("edition_id"), built, "MM")))
 	}))
 	defer srv.Close()
 

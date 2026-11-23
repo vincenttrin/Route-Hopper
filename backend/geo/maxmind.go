@@ -1,6 +1,7 @@
 package geo
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
 	"time"
@@ -24,8 +25,7 @@ func OpenMaxMind(cityPath, asnPath string) (*MaxMind, error) {
 	m := &MaxMind{city: city}
 	if asnPath != "" {
 		if m.asn, err = geoip2.Open(asnPath); err != nil {
-			city.Close()
-			return nil, fmt.Errorf("open asn database: %w", err)
+			return nil, errors.Join(fmt.Errorf("open asn database: %w", err), city.Close())
 		}
 	}
 	return m, nil
@@ -60,8 +60,9 @@ func (m *MaxMind) Info() Info {
 }
 
 func (m *MaxMind) Close() error {
+	var asnErr error
 	if m.asn != nil {
-		m.asn.Close()
+		asnErr = m.asn.Close()
 	}
-	return m.city.Close()
+	return errors.Join(m.city.Close(), asnErr)
 }

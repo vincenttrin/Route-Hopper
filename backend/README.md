@@ -120,6 +120,37 @@ location database (it may still be downloading, or the download failed), in whic
 `updated` is the build date of the City database (UTC). Without a database it is just
 `{ "available": false }`. It changes by itself when the databases are refreshed.
 
+### Metrics: `GET /metrics` on port 9464
+
+Prometheus metrics are served on a listener of their own, fixed at `:9464` to match the
+scrape target in `alloy/config.alloy`, not on the API port: the frontend proxy never reaches them and compose does not publish the
+port, so only a scraper on the compose network can read them (see
+[Metrics](../README.md#metrics-grafana-cloud) for shipping them to Grafana Cloud). Any path
+on that port answers with the metrics. If the port cannot be bound, the server logs
+`metrics disabled` and serves the API as usual.
+
+HTTP metrics use the OpenTelemetry HTTP semantic-convention names, so one dashboard covers
+this app and the others on the same Grafana stack. The `service` label is not set here; the
+scraper adds it (`alloy/config.alloy`).
+
+| Metric | Type | Labels | Meaning |
+| --- | --- | --- | --- |
+| `http_server_request_duration_seconds` | histogram | `http_request_method`, `http_route`, `http_response_status_code` | Every API request, with how long it took |
+| `http_server_active_requests` | gauge | `http_request_method` | Requests in flight |
+| `traceroute_runs_total` | counter | `outcome` | Traceroute runs finished |
+| `traceroute_run_duration_seconds` | histogram | `outcome` | How long each run took, ICMP retry included |
+| `traceroute_active_runs` | gauge | | Runs in flight (at most `MAX_CONCURRENT_TRACES`) |
+| `process_*`, `go_*` | | | CPU, memory, open files, start time (uptime is `time() - process_start_time_seconds`), Go runtime |
+
+`http_route` is the route template, such as `/api/trace`, never the raw path; a request that
+matched no route has no `http_route`. Methods other than the standard ones are counted as
+`_OTHER`. `outcome` is `reached` (the destination answered), `unreached` (the run ended, or
+hit its time limit, without an answer; common, since many hosts drop probes), `error` (such
+as traceroute missing) or `canceled` (the client left first). A trace request turned away
+before traceroute starts (invalid input, a forbidden target, `429` from the rate limit,
+`503` when all trace slots are busy) shows only in the HTTP metrics. A streamed trace has
+already sent its `200` when it starts, so its status stays `200` whatever the outcome.
+
 ## Hostname locations
 
 GeoIP databases are built for end-user addresses and are often wrong about routers: a backbone

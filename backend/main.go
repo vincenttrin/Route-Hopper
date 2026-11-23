@@ -15,6 +15,7 @@ import (
 
 	"github.com/vincenttrin/Route-Hopper/backend/geo"
 	"github.com/vincenttrin/Route-Hopper/backend/handlers"
+	"github.com/vincenttrin/Route-Hopper/backend/metrics"
 	"github.com/vincenttrin/Route-Hopper/backend/trace"
 )
 
@@ -25,7 +26,11 @@ func main() {
 
 	tracer := trace.NewTracer()
 	locator := geo.NewSwappable(openGeo())
-	defer locator.Close()
+	defer func() {
+		if err := locator.Close(); err != nil {
+			log.Printf("close GeoIP databases: %v", err)
+		}
+	}()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -41,6 +46,8 @@ func main() {
 	api.Hostnames = hostnames
 	api.AllowPrivate = os.Getenv("ALLOW_PRIVATE_TARGETS") == "true"
 	api.HiddenHops = handlers.DefaultHiddenHops
+	m := metrics.New()
+	api.Metrics = m
 
 	mux := http.NewServeMux()
 	// Both trace endpoints draw on one rate limit.
@@ -55,24 +62,52 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + env("PORT", "8080"),
-		Handler:           mux,
+		Handler:           m.Middleware(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      tracer.Timeout + tracer.ICMPTimeout + 15*time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
+	// Metrics are served on a port of their own that nginx does not proxy and
+	// compose does not publish, so only the scraper on the internal network
+	// reaches them. The API runs normally if the port cannot be bound.
+	metricsSrv := &http.Server{
+		Addr:              ":9464",
+		Handler:           m.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 	go func() {
+		log.Printf("serving metrics on %s", metricsSrv.Addr)
+		if err := metricsSrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("metrics disabled: %v", err)
+		}
+	}()
+
+	// ListenAndServe returns as soon as Shutdown starts; main waits on stopped so
+	// that the traces still running can finish before the process exits.
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
 		<-ctx.Done()
+		// A second signal now kills the process instead of waiting for the traces.
+		stop()
+		if err := metricsSrv.Close(); err != nil {
+			log.Printf("stop metrics server: %v", err)
+		}
 		shutdown, cancel := context.WithTimeout(context.Background(), tracer.Timeout+tracer.ICMPTimeout+20*time.Second)
 		defer cancel()
-		srv.Shutdown(shutdown)
+		// An error here is the deadline passing with traces still running; they are cut off.
+		if err := srv.Shutdown(shutdown); err != nil {
+			log.Printf("shutdown: %v", err)
+		}
 	}()
 
 	log.Printf("listening on %s", srv.Addr)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
+	<-stopped
 }
 
 func geoPaths() (city, asn string) {

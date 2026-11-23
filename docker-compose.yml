@@ -16,6 +16,9 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    # On stop the backend lets running traces finish (up to 75s plus a 20s margin, see
+    # main.go); Docker's default 10s would SIGKILL it and cut the streams off.
+    stop_grace_period: 100s
     restart: unless-stopped
 
   frontend:
@@ -25,7 +28,28 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    # Compose stops the frontend first; nginx keeps proxying the draining trace streams.
+    stop_grace_period: 100s
+    restart: unless-stopped
+
+  # Ships the backend's metrics to Grafana Cloud. Off unless the "metrics" profile is
+  # enabled (COMPOSE_PROFILES=metrics); see "Metrics" in README.md.
+  alloy:
+    image: grafana/alloy:v1.21.3
+    profiles: [metrics]
+    command: ["run", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    environment:
+      GRAFANA_CLOUD_PROM_URL: ${GRAFANA_CLOUD_PROM_URL:-}
+      GRAFANA_CLOUD_PROM_USER: ${GRAFANA_CLOUD_PROM_USER:-}
+      GRAFANA_CLOUD_API_KEY: ${GRAFANA_CLOUD_API_KEY:-}
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Samples not yet sent survive a restart or a Grafana Cloud outage.
+      - alloy:/var/lib/alloy/data
+    depends_on:
+      - backend
     restart: unless-stopped
 
 volumes:
   geoip:
+  alloy:

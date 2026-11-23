@@ -13,5 +13,6 @@ USER app
 COPY --from=build /traffic-visualizer-api /usr/local/bin/traffic-visualizer-api
 ENV GEOIP_CITY_DB=/data/GeoLite2-City.mmdb GEOIP_ASN_DB=/data/GeoLite2-ASN.mmdb GEOIP_AUTO_UPDATE=true
 VOLUME /data
-EXPOSE 8080
+# 9464 serves the Prometheus metrics; it is not meant to be published.
+EXPOSE 8080 9464
 ENTRYPOINT ["traffic-visualizer-api"]

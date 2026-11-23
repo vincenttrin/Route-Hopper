@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,7 +110,12 @@ func (u *Updater) Update(ctx context.Context, force bool) (bool, error) {
 			return false, err
 		}
 		part := ed.final + ".part"
-		defer os.Remove(part)
+		// After a successful install the file has been renamed away and there is nothing to remove.
+		defer func() {
+			if err := os.Remove(part); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				u.Logf("geoip: remove %s: %v", part, err)
+			}
+		}()
 		if err := u.Source.Fetch(ctx, ed.e, part); err != nil {
 			return false, err
 		}
@@ -119,29 +125,35 @@ func (u *Updater) Update(ctx context.Context, force bool) (bool, error) {
 		return false, fmt.Errorf("downloaded databases are unusable: %w", err)
 	}
 	if err := next.check(); err != nil {
-		next.Close()
-		return false, fmt.Errorf("downloaded databases are unusable: %w", err)
+		return false, errors.Join(fmt.Errorf("downloaded databases are unusable: %w", err), next.Close())
 	}
 	info := next.Info()
 	if !force && u.Target != nil {
 		if cur := u.Target.Info(); cur.Available && !info.BuildTime().After(cur.BuildTime()) {
-			next.Close()
+			if err := next.Close(); err != nil {
+				u.Logf("geoip: close the downloaded databases: %v", err)
+			}
+			// Without the reset the files stay due and are downloaded again at every check.
 			now := u.Now()
-			os.Chtimes(u.CityPath, now, now)
+			if err := os.Chtimes(u.CityPath, now, now); err != nil {
+				u.Logf("geoip: reset the age of %s: %v", u.CityPath, err)
+			}
 			u.Logf("geoip: already up to date (%s, built %s)", info.Provider, info.Updated)
 			return false, nil
 		}
 	}
 	for _, ed := range editions {
 		if err := os.Rename(ed.final+".part", ed.final); err != nil {
-			next.Close()
-			return false, err
+			return false, errors.Join(err, next.Close())
 		}
 	}
+	// The new files are installed whatever closing reports, so it is logged, not returned.
 	if u.Target != nil {
-		u.Target.Swap(next)
-	} else {
-		next.Close()
+		if err := u.Target.Swap(next); err != nil {
+			u.Logf("geoip: close the previous databases: %v", err)
+		}
+	} else if err := next.Close(); err != nil {
+		u.Logf("geoip: close the downloaded databases: %v", err)
 	}
 	u.Logf("geoip: installed %s databases built %s", info.Provider, info.Updated)
 	return true, nil

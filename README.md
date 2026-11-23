@@ -139,12 +139,50 @@ Docker Desktop on macOS and Windows drops the replies traceroute relies on, so t
 show nothing past the container's gateway, and the UI warns about it. Use a Linux host, or run natively. Details are in
 [backend/README.md](backend/README.md#docker).
 
+## Metrics (Grafana Cloud)
+
+The backend exposes Prometheus metrics: request counts and latency, requests and
+traceroute runs in flight, traceroute runs by outcome and duration, and process CPU,
+memory and uptime. They are on an internal port (9464) that nginx does not proxy and
+compose does not publish. The names and labels are listed in
+[backend/README.md](backend/README.md#metrics-get-metrics-on-port-9464).
+
+The `alloy` service in `docker-compose.yml` runs [Grafana Alloy](https://grafana.com/docs/alloy/)
+with `alloy/config.alloy`: it scrapes the backend once a minute, which keeps within the
+Grafana Cloud free tier, labels every series `service="traffic-visualizer"`, and
+remote-writes them to Grafana Cloud. It only starts with the `metrics` compose profile, so a
+plain `docker compose up` runs the app as before, without it.
+
+To turn it on, on the server:
+
+1. In Grafana Cloud, open your stack's **Prometheus** details: note the remote write
+   endpoint (ending in `/api/prom/push`) and the username (a number), and create an
+   access policy token with the `metrics:write` scope.
+2. Next to `docker-compose.yml`, copy `.env.example` to `.env`, fill in
+   `GRAFANA_CLOUD_PROM_URL`, `GRAFANA_CLOUD_PROM_USER` and `GRAFANA_CLOUD_API_KEY`, and
+   uncomment `COMPOSE_PROFILES=metrics`. `.env` is git-ignored; never commit the token.
+3. `docker compose up -d --build`. Compose reads `.env` and starts `alloy` with the rest.
+4. Check: `docker compose logs alloy` shows no `Failed to send batch` warnings, and in
+   Grafana **Explore** `up{service="traffic-visualizer"}` is `1`.
+
+Without `.env` (or without the profile) `alloy` does not start and nothing else changes.
+With the profile but no credentials, `alloy` keeps retrying and logs warnings; the app is
+unaffected. Alloy buffers samples in the `alloy` volume, so a restart or a short Grafana
+Cloud outage loses nothing.
+
+To see the raw metrics: `docker compose exec backend wget -qO- http://localhost:9464/metrics`
+(or `curl localhost:9464/metrics` on a native run). To try the whole pipeline without a
+Grafana Cloud account, point Alloy at a local Prometheus started with
+`--web.enable-remote-write-receiver` on the compose network, by setting
+`GRAFANA_CLOUD_PROM_URL=http://prometheus:9090/api/v1/write` (any user and key).
+
 ## Ports and environment variables
 
 | Port | Service |
 | --- | --- |
 | 8080 | Backend API (native run; `PORT` to change) |
 | 5173 | Vite dev server (native run) or frontend in Docker Compose (`PORT` to change); the two cannot run at the same time on one host |
+| 9464 | Backend Prometheus metrics (fixed, matches `alloy/config.alloy`); not published by compose |
 
 | Variable | Default | Used by |
 | --- | --- | --- |
@@ -156,6 +194,8 @@ show nothing past the container's gateway, and the UI warns about it. Use a Linu
 | `ALLOW_PRIVATE_TARGETS` | `false` | Allow tracing loopback/private addresses (local dev only) |
 | `MAX_CONCURRENT_TRACES` | `4` | Backend: traces running at once |
 | `RATE_LIMIT_PER_MINUTE` | `20` | Backend: per client address, burst of 5 |
+| `COMPOSE_PROFILES` | unset | Compose: `metrics` starts `alloy`, which ships the metrics to Grafana Cloud |
+| `GRAFANA_CLOUD_PROM_URL`, `GRAFANA_CLOUD_PROM_USER`, `GRAFANA_CLOUD_API_KEY` | unset | Compose (`alloy`): Grafana Cloud remote write endpoint, username and token; see `.env.example` |
 
 The full list, API reference, and error codes are in [backend/README.md](backend/README.md).
 
@@ -169,9 +209,10 @@ cd frontend && npm test && npm run lint
 ## Layout
 
 ```
-backend/            Go API (main.go, handlers/, trace/, geo/); geo/ places hops (host name codes, then GeoIP) and downloads and refreshes the databases
+backend/            Go API (main.go, handlers/, trace/, geo/, metrics/); geo/ places hops (host name codes, then GeoIP) and downloads and refreshes the databases
 frontend/           React app (src/components, src/lib, src/services)
-docker-compose.yml  Frontend (nginx) and backend services
+docker-compose.yml  Frontend (nginx) and backend services, and alloy (metrics profile)
+alloy/              Grafana Alloy config: scrapes the backend metrics, ships them to Grafana Cloud
 CLAUDE.md           Notes for AI coding agents
 ```
 

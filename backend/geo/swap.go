@@ -60,13 +60,14 @@ func (s *Swappable) Lookup(ip netip.Addr) (Location, bool) {
 	return s.cur.Lookup(ip)
 }
 
-// Swap makes next the active Locator and closes the previous one.
-func (s *Swappable) Swap(next Locator) {
+// Swap makes next the active Locator and closes the previous one. The error is
+// from closing the previous one; next is active either way.
+func (s *Swappable) Swap(next Locator) error {
 	s.mu.Lock()
 	old := s.cur
 	s.cur = Cached(next)
 	s.mu.Unlock()
-	old.Close()
+	return old.Close()
 }
 
 // Info reports the active databases.
